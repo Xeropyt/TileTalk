@@ -78,7 +78,7 @@ export function DiceRoller({ dealerIndex, playerNames }: { dealerIndex: number; 
   };
 
   const total = values?.reduce((s, v) => s + v, 0) ?? 0;
-  const brk = values && !rolling ? wallBreak(total, dealerIndex) : null;
+  const brk = values && !rolling ? wallBreak(total, dealerIndex, playerNames.length) : null;
 
   return (
     <Card>

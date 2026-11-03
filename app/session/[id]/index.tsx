@@ -3,10 +3,11 @@ import { StyleSheet, Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Protected, useSignedInUser } from '../../../src/auth';
 import { DiceRoller } from '../../../src/components/Dice';
+import { PayoutsCard } from '../../../src/components/PayoutsCard';
 import { PlayerSeat } from '../../../src/components/PlayerSeat';
-import { deleteSession, endSession, subscribeHands, subscribeSession } from '../../../src/db';
+import { deleteSession, endSession, subscribeHands, subscribeIsAdmin, subscribeSession } from '../../../src/db';
 import { seatWindOf, WIND_CHARS, WIND_NAMES } from '../../../src/game/winds';
-import { getRuleset } from '../../../src/scoring';
+import { limitName, riichiFinalResults, riichiOptionsOf, rulesetFor } from '../../../src/scoring';
 import { colors, radius } from '../../../src/theme';
 import type { HandRecord, Session } from '../../../src/types';
 import { Button, Card, ErrorText, formatPoints, Loading, Muted, Screen, SectionTitle, Tile } from '../../../src/ui';
@@ -27,32 +28,51 @@ function SessionScreen() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const user = useSignedInUser();
 
   useEffect(() => subscribeSession(id, setSession, (e) => { setError(e.message); setSession(null); }), [id]);
   useEffect(() => subscribeHands(id, setHands, (e) => setError(e.message)), [id]);
+  useEffect(() => subscribeIsAdmin(user.uid, setIsAdmin), [user.uid]);
 
   if (session === undefined || deleting) return <Loading />;
   if (session === null) return <Screen><Muted>This game doesn’t exist, or you’re not in its group.</Muted><ErrorText message={error} /></Screen>;
 
   const { table, players, scores } = session;
+  const ruleset = rulesetFor(session.rulesetId, session.options);
+  const isRiichi = ruleset.scoringModel === 'hanFu';
   const finished = session.status === 'finished';
   const nameOf = (pid: string | null) => players.find((p) => p.id === pid)?.name ?? 'Someone';
 
   // Fixed physical seating viewed from above: seat 0 at the bottom, then counter-clockwise.
-  const seatView = (i: number) => (
-    <PlayerSeat
-      player={players[i]}
-      seatWind={seatWindOf(i, table.dealerIndex)}
-      score={scores[players[i].id] ?? 0}
-      isDealer={!finished && table.dealerIndex === i}
-      dealerStreak={table.dealerStreak}
-    />
-  );
+  const seatView = (i: number) =>
+    // Three-player games leave the left-hand seat empty.
+    !players[i] ? (
+      <View style={styles.emptySeat} />
+    ) : (
+      <PlayerSeat
+        player={players[i]}
+        seatWind={seatWindOf(i, table.dealerIndex, players.length)}
+        score={scores[players[i].id] ?? 0}
+        absolute={isRiichi}
+        isDealer={!finished && table.dealerIndex === i}
+        dealerStreak={table.dealerStreak}
+      />
+    );
 
+  const riichi = isRiichi ? riichiOptionsOf(ruleset, session.options, players.length) : null;
   const standings = [...players].sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0));
+  const riichiResults = riichi
+    ? riichiFinalResults(
+        players.map((p) => p.id),
+        scores,
+        table.riichiSticks ?? 0,
+        riichi,
+      )
+    : null;
 
   const describe = (h: HandRecord) => {
+    if (h.riichi) return describeRiichi(h, nameOf);
     if (h.result === 'draw') return 'Draw, no winner';
     if (h.result === 'falseWin') return `${nameOf(h.offenderId ?? null)} declared a false win (詐胡) and paid everyone ${h.payout}. Replayed.`;
     if (h.winType === 'selfDraw') return `${nameOf(h.winnerId)} self-drew ${h.tai} tai`;
@@ -71,6 +91,11 @@ function SessionScreen() {
             <Tile char={WIND_CHARS[table.prevailingWind]} size={52} color={colors.lacquer} />
             <Text style={styles.round}>{finished ? 'Game over' : `${WIND_NAMES[table.prevailingWind]} round`}</Text>
             {!finished ? <Muted>Hand {table.handNumber}</Muted> : null}
+            {isRiichi && !finished ? (
+              <Muted>
+                {table.honba ?? 0} honba, {table.riichiSticks ?? 0} {table.riichiSticks === 1 ? 'stick' : 'sticks'}
+              </Muted>
+            ) : null}
           </View>
           {seatView(1)}
         </View>
@@ -79,7 +104,29 @@ function SessionScreen() {
 
       <ErrorText message={error} />
 
-      {finished ? (
+      {finished && riichiResults ? (
+        <Card>
+          <SectionTitle>Final results</SectionTitle>
+          {riichiResults.map((r) => {
+            const p = players.find((x) => x.id === r.playerId)!;
+            return (
+              <View key={r.playerId} style={styles.standing}>
+                <Text style={styles.standingText}>
+                  {r.rank}. {p.avatar} {p.name}, {r.points.toLocaleString()}
+                </Text>
+                <Text style={[styles.standingText, { color: r.result >= 0 ? colors.gain : colors.loss }]}>
+                  {r.result > 0 ? '+' : ''}
+                  {r.result.toFixed(1)}
+                </Text>
+              </View>
+            );
+          })}
+          <Muted>
+            In thousands, after {riichi!.returnPoints.toLocaleString()} return points, oka to first place and uma{' '}
+            {riichi!.uma.map((u) => (u > 0 ? `+${u}` : `${u}`)).join(' / ')}.
+          </Muted>
+        </Card>
+      ) : finished ? (
         <Card>
           <SectionTitle>Final standings</SectionTitle>
           {standings.map((p, i) => (
@@ -96,10 +143,11 @@ function SessionScreen() {
       ) : (
         <>
           <Button title="Record hand" onPress={() => router.push(`/session/${session.id}/hand`)} />
-          <Button title="Scan winning hand" variant="secondary" onPress={() => router.push(`/scan?sessionId=${session.id}`)} />
+          <PayoutsCard session={session} uid={user.uid} />
           <DiceRoller dealerIndex={table.dealerIndex} playerNames={players.map((p) => p.name)} />
         </>
       )}
+      {finished ? <PayoutsCard session={session} uid={user.uid} /> : null}
 
       <SectionTitle>Hands</SectionTitle>
       {hands.length === 0 ? (
@@ -129,8 +177,14 @@ function SessionScreen() {
           }}
         />
       ) : null}
-      <Muted>Rules: {getRuleset(session.rulesetId).description}</Muted>
-      {session.createdBy === user.uid ? (
+      <Muted>
+        Rules: {ruleset.description} This game:{' '}
+        {riichi
+          ? `${riichi.gameLength === 'hanchan' ? 'hanchan' : 'East round only'}, ${riichi.startingPoints.toLocaleString()} start, uma ${riichi.uma.map((u) => (u > 0 ? `+${u}` : `${u}`)).join(' / ')}, ${players.length} players.`
+          : `${ruleset.payment.minTai} to ${ruleset.payment.maxTai} tai, ${ruleset.payment.discard === 'shooterOnly' ? 'shooter pays for the table' : 'shooter pays double'}, ${players.length} players.`}
+      </Muted>
+      {/* Only admins can delete games. The Firestore rules enforce this too. */}
+      {isAdmin ? (
         <>
           <Button
             title={confirmDelete ? 'Tap again to delete this game for everyone' : 'Delete game'}
@@ -156,6 +210,23 @@ function SessionScreen() {
   );
 }
 
+function describeRiichi(h: HandRecord, nameOf: (id: string | null) => string): string {
+  const r = h.riichi!;
+  const riichis = r.declarers.length ? ` Riichi: ${r.declarers.map(nameOf).join(', ')}.` : '';
+  if (h.result === 'falseWin') return `${nameOf(h.offenderId ?? null)} made a chombo and paid a reverse mangan. Replayed.`;
+  if (r.drawType === 'abortive') return `Abortive draw. Replayed.${riichis}`;
+  if (r.drawType === 'exhaustive') {
+    if (r.nagashiId) return `Exhaustive draw: ${nameOf(r.nagashiId)} scored nagashi mangan.${riichis}`;
+    return `Exhaustive draw. Tenpai: ${r.tenpai.length ? r.tenpai.map(nameOf).join(', ') : 'nobody'}.${riichis}`;
+  }
+  const wins = r.winners.map((w) => {
+    const value = limitName(w.base) ?? `${w.han} han ${w.fu} fu`;
+    return `${nameOf(w.playerId)} ${value}`;
+  });
+  const how = h.winType === 'selfDraw' ? 'by tsumo' : `off ${nameOf(h.discarderId)}`;
+  return `${wins.join(' and ')} ${how}${r.winners.length > 1 ? ' (double ron)' : ''}.${riichis}`;
+}
+
 const styles = StyleSheet.create({
   table: {
     backgroundColor: colors.feltRaised,
@@ -168,6 +239,7 @@ const styles = StyleSheet.create({
   },
   tableRow: { flexDirection: 'row', justifyContent: 'center' },
   middleRow: { justifyContent: 'space-between', alignItems: 'center' },
+  emptySeat: { width: 112 },
   centre: { alignItems: 'center', gap: 6, flexShrink: 1 },
   round: { color: colors.text, fontSize: 15, fontWeight: '700', textAlign: 'center' },
   standing: { flexDirection: 'row', justifyContent: 'space-between' },

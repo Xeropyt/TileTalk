@@ -20,8 +20,9 @@ const HONOUR_SETS = [
  */
 export const houseRules: Ruleset = {
   id: 'house',
-  name: 'House rules',
+  name: 'House',
   description: 'Singapore and Hong Kong mix, flowers, no animals. Payment doubles per tai.',
+  scoringModel: 'tai',
   handSize: 13,
   payment: {
     basePoints: 1, // 1 tai = 1, 2 tai = 2, 3 tai = 4, 4 tai = 8...
@@ -29,8 +30,42 @@ export const houseRules: Ruleset = {
     maxTai: 5,
     discard: 'shooterDouble',
     selfDrawMultiplier: 2,
-    falseWinTai: 5, // pay everyone as if they'd each won a limit hand
   },
+  immediatePayouts: [
+    {
+      id: 'exposed_kong',
+      name: 'Exposed kong',
+      chinese: '明槓',
+      description: 'You kong a discard, or add the fourth tile to a pung you’ve already shown.',
+      payer: 'others',
+      amount: 1,
+    },
+    {
+      id: 'concealed_kong',
+      name: 'Concealed kong',
+      chinese: '暗槓',
+      description: 'You declare a kong of four tiles you drew yourself.',
+      payer: 'others',
+      amount: 1,
+    },
+    {
+      id: 'flower_pair',
+      name: 'Flower pair',
+      chinese: '花對',
+      description:
+        'You hold the flower and season of the same number. The player whose seat it is (East 1, South 2, West 3, North 4) pays you 1. If it’s your own seat, everyone pays you 1.',
+      payer: 'owner',
+      amount: 1,
+    },
+    {
+      id: 'flower_kong',
+      name: 'Flower kong',
+      chinese: '花槓',
+      description: 'You collect all four flowers, or all four seasons. Still counts as 一台花 if you win.',
+      payer: 'others',
+      amount: 2,
+    },
+  ],
   rotation: {
     dealerStaysOnWin: true,
     dealerStaysOnDraw: true,

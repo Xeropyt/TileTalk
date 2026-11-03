@@ -6,7 +6,7 @@ import { StatsGrid } from '../../src/components/StatsGrid';
 import { TitleCard } from '../../src/components/TitleCard';
 import { setGrantedTitle, subscribeIsAdmin, subscribeProfile } from '../../src/db';
 import { shownTitles, TITLES } from '../../src/game/titles';
-import { emptyStats, UserProfile } from '../../src/types';
+import { normaliseStats, UserProfile } from '../../src/types';
 import { Button, Card, ErrorText, Loading, Muted, Screen, SectionTitle, Title } from '../../src/ui';
 
 /** What anyone can see about a player: their avatar, chosen titles and career stats. */
@@ -56,7 +56,7 @@ function PlayerScreen() {
       {isMe ? <Button title="Choose titles" variant="secondary" onPress={() => router.push('/profile/titles')} /> : null}
 
       <SectionTitle>Career stats</SectionTitle>
-      <StatsGrid stats={{ ...emptyStats(), ...profile.stats }} />
+      <StatsGrid stats={normaliseStats(profile.stats)} />
 
       {isAdmin ? <AdminTitles profile={profile} /> : null}
     </Screen>

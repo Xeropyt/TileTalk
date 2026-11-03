@@ -3,7 +3,15 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 import { Link, router } from 'expo-router';
 import { displayNameOf, Protected, useAuth, useSignedInUser } from '../auth';
 import { SessionRow } from '../components/SessionRow';
-import { createGroup, joinGroup, subscribeMyGroups, subscribeMySessions, updateProfile } from '../db';
+import {
+  createGroup,
+  joinGroup,
+  subscribeAllGroups,
+  subscribeIsAdmin,
+  subscribeMyGroups,
+  subscribeMySessions,
+  updateProfile,
+} from '../db';
 import { colors, radius } from '../theme';
 import type { Group, Session } from '../types';
 import { Button, Card, ErrorText, Field, Loading, Muted, SectionTitle, Title } from '../ui';
@@ -32,6 +40,8 @@ function GamesContent() {
 
   useEffect(() => subscribeMyGroups(user.uid, setGroups, (e) => setError(e.message)), [user.uid]);
   useEffect(() => subscribeMySessions(user.uid, setSessions, (e) => setError(e.message)), [user.uid]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => subscribeIsAdmin(user.uid, setIsAdmin), [user.uid]);
 
   const hasName = !!profile?.displayName?.trim();
   const me = { name: displayNameOf(profile), avatar: profile?.avatar ?? '🀄' };
@@ -72,8 +82,6 @@ function GamesContent() {
       <Muted>Scores, winds and dice for your mahjong table.</Muted>
 
       {profile && !hasName ? <NameCard uid={user.uid} /> : null}
-
-      <Button title="Scan a winning hand" variant="tile" onPress={() => router.push('/scan')} />
 
       <ErrorText message={error} />
 
@@ -123,6 +131,8 @@ function GamesContent() {
         <Button title="Join group" variant="secondary" onPress={onJoin} loading={busy === 'join'} />
       </Card>
 
+      {isAdmin ? <AdminGroups /> : null}
+
       <SectionTitle>History</SectionTitle>
       {sessions === null ? (
         <Loading />
@@ -143,6 +153,34 @@ function GamesContent() {
         </>
       )}
     </TabPage>
+  );
+}
+
+/** Admins only: every group, including ones they're not in, so they can open and delete them. */
+function AdminGroups() {
+  const [groups, setGroups] = useState<Group[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => subscribeAllGroups(setGroups, (e) => setError(e.message)), []);
+  return (
+    <Card>
+      <SectionTitle>All groups (admin)</SectionTitle>
+      <Muted>Open a group to delete it.</Muted>
+      <ErrorText message={error} />
+      {groups === null ? (
+        <Loading />
+      ) : (
+        groups.map((g) => (
+          <Link key={g.id} href={`/group/${g.id}`} asChild>
+            <Pressable style={({ pressed }) => [styles.adminRow, pressed && { opacity: 0.75 }]} accessibilityRole="button">
+              <Text style={styles.adminName}>{g.name}</Text>
+              <Muted>
+                {g.memberIds.length} {g.memberIds.length === 1 ? 'member' : 'members'}
+              </Muted>
+            </Pressable>
+          </Link>
+        ))
+      )}
+    </Card>
   );
 }
 
@@ -184,4 +222,14 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   groupName: { color: colors.text, fontSize: 17, fontWeight: '700' },
+  adminRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: radius.control,
+    backgroundColor: colors.feltDeep,
+  },
+  adminName: { color: colors.text, fontSize: 15, fontWeight: '600', flexShrink: 1 },
 });

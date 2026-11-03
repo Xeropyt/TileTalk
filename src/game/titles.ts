@@ -1,4 +1,4 @@
-import { findPattern, getRuleset, Ruleset } from '../scoring';
+import { findPattern, nextRiichiTable, riichiOptionsOf, Ruleset, rulesetFor } from '../scoring';
 import type { Group, HandRecord, Session, UserProfile } from '../types';
 import { computeStats } from './stats';
 import { initialTable, nextTableState, RotationRules } from './winds';
@@ -144,7 +144,7 @@ function chronological(sessions: Session[], handsBySession: Record<string, HandR
     .map((session) => ({
       session,
       hands: [...(handsBySession[session.id] ?? [])].sort((a, b) => a.handNumber - b.handNumber),
-      ruleset: getRuleset(session.rulesetId),
+      ruleset: rulesetFor(session.rulesetId, session.options),
     }));
 }
 
@@ -152,22 +152,35 @@ function chronological(sessions: Session[], handsBySession: Record<string, HandR
 function isFullGame(g: Game): boolean {
   if (g.hands.length === 0) return false;
   let table = initialTable();
+  if (g.ruleset.scoringModel === 'hanFu') {
+    const opts = riichiOptionsOf(g.ruleset, g.session.options, g.session.players.length);
+    for (const h of g.hands) {
+      if (!h.riichi) return false;
+      table = nextRiichiTable(table, h.riichi.outcome, opts, g.session.players.length, h.riichi.sticksAfter);
+    }
+    return table.finished;
+  }
   for (const h of g.hands) {
     table = nextTableState(
       table,
       { dealerWon: h.winnerId === h.dealerId, draw: h.result === 'draw', replay: h.result === 'falseWin' },
       g.ruleset.rotation,
+      g.session.players.length,
     );
   }
   return table.finished;
 }
 
-/** Everyone's running score after each hand. */
+/** Everyone's running score after each hand, including immediate payouts made during it. */
 function runningScores(g: Game): Record<string, number>[] {
   let current: Record<string, number> = Object.fromEntries(g.session.players.map((p) => [p.id, 0]));
+  const add = (payments: Record<string, number> = {}) => {
+    for (const [pid, delta] of Object.entries(payments)) current[pid] = (current[pid] ?? 0) + delta;
+  };
   return g.hands.map((h) => {
     current = { ...current };
-    for (const [pid, delta] of Object.entries(h.payments ?? {})) current[pid] = (current[pid] ?? 0) + delta;
+    for (const p of g.session.payouts ?? []) if (p.handNumber === h.handNumber) add(p.payments);
+    add(h.payments);
     return current;
   });
 }
@@ -187,7 +200,7 @@ const isLast = (s: Record<string, number>, pid: string) =>
   Object.values(s).every((v) => v >= (s[pid] ?? 0)) && Object.values(s).some((v) => v > (s[pid] ?? 0));
 
 function keptDeal(h: HandRecord, pid: string, rotation: RotationRules): boolean {
-  return (h.winnerId === pid && rotation.dealerStaysOnWin) || (h.result === 'draw' && rotation.dealerStaysOnDraw);
+  return (wonBy(h, pid) && rotation.dealerStaysOnWin) || (h.result === 'draw' && rotation.dealerStaysOnDraw);
 }
 
 function longestRun(flags: boolean[]): number {
@@ -201,6 +214,9 @@ function longestRun(flags: boolean[]): number {
 }
 
 const isPlayed = (h: HandRecord) => h.result !== 'falseWin';
+/** Did this player win the hand? A Riichi double ron has two winners, not just winnerId. */
+const wonBy = (h: HandRecord, pid: string) =>
+  h.riichi?.winners.length ? h.riichi.winners.some((w) => w.playerId === pid) : h.winnerId === pid;
 const hasPattern = (h: HandRecord, id: string) => (h.patterns ?? []).some((p) => p.id === id && p.count > 0);
 const hasLimitHand = (h: HandRecord, ruleset: Ruleset) =>
   (h.patterns ?? []).some((p) => p.count > 0 && findPattern(ruleset, p.id)?.limit);
@@ -225,7 +241,7 @@ export function computeTitles(
     return me && g.hands.length > 0 ? [{ ...g, me: me.id, played: g.hands.filter(isPlayed) }] : [];
   });
   const myHands = mine.flatMap((g) => g.played.map((h) => ({ h, me: g.me, ruleset: g.ruleset })));
-  const myWins = myHands.filter((x) => x.h.winnerId === x.me);
+  const myWins = myHands.filter((x) => wonBy(x.h, x.me));
   const winsWith = (id: string) => myWins.filter((x) => hasPattern(x.h, id)).length;
   const finished = mine.filter((g) => g.session.status === 'finished');
   const full = mine.filter(isFullGame);
@@ -251,10 +267,14 @@ export function computeTitles(
         if (endOfEast < 0 || endOfEast === g.hands.length - 1) return false; // never got past East
         return isLast(scores[endOfEast], g.me) && isFirst(scores[scores.length - 1], g.me);
       }),
-    one_tai_merchant: () => stats.wins >= 20 && myWins.filter((x) => x.h.tai === 1).length / stats.wins >= 0.7,
+    one_tai_merchant: () => {
+      // Tai games only: a 1-han Riichi win isn't a 1-tai hand.
+      const taiWins = myWins.filter((x) => x.ruleset.scoringModel === 'tai');
+      return taiWins.length >= 20 && taiWins.filter((x) => x.h.tai === 1).length / taiWins.length >= 0.7;
+    },
     za_hu: () => mine.flatMap((g) => g.hands.filter((h) => h.result === 'falseWin' && h.offenderId === g.me)).length >= 3,
     feeding_frenzy: () => longestRun(myHands.map((x) => x.h.discarderId === x.me)) >= 3,
-    ghost_of_the_table: () => full.some((g) => !g.hands.some((h) => h.winnerId === g.me)),
+    ghost_of_the_table: () => full.some((g) => !g.hands.some((h) => wonBy(h, g.me))),
     eternal_bridesmaid: () => longestRun(finished.map((g) => placeOf(g.session.scores, g.me) === 2)) >= 5,
     limit_victim: () => myHands.some((x) => x.h.discarderId === x.me && hasLimitHand(x.h, x.ruleset)),
     one_and_done: () =>
@@ -262,7 +282,7 @@ export function computeTitles(
         const first = g.played.find((h) => h.dealerId === g.me);
         return !!first && !keptDeal(first, g.me, g.ruleset.rotation);
       }).length >= 10,
-    big_hand_dreamer: () => longestRun(myHands.map((x) => x.h.winnerId !== x.me && x.h.discarderId !== x.me)) >= 10,
+    big_hand_dreamer: () => longestRun(myHands.map((x) => !wonBy(x.h, x.me) && x.h.discarderId !== x.me)) >= 10,
     first_blood: () => stats.wins >= 1,
     regular: () => mine.length >= 10,
     centurion: () => stats.handsPlayed >= 100,
@@ -271,6 +291,33 @@ export function computeTitles(
 
   const permanent = TITLES.filter((t) => !t.held && !t.grantOnly && checks[t.id]?.()).map((t) => t.id);
   return { permanent, held: heldTitles(uid, games, groups) };
+}
+
+/**
+ * The titles a player has: every permanent title they qualified for at some point in the games
+ * that still exist, plus the group titles they hold now. Checked after each of their games, so a
+ * title stays once earned (a later losing streak can't take away The Great Wall), but goes if the
+ * games that earned it are deleted.
+ */
+export function earnedTitles(
+  uid: string,
+  sessions: Session[],
+  handsBySession: Record<string, HandRecord[]>,
+  groups: Group[],
+): { permanent: string[]; held: HeldTitle[] } {
+  const ordered = chronological(sessions, handsBySession).map((g) => g.session);
+  const permanent = new Set<string>();
+  const sofar: Session[] = [];
+  for (const s of ordered) {
+    sofar.push(s);
+    // Permanent titles only depend on games the player sat in, so only those can add one.
+    if (!s.players.some((p) => p.uid === uid) || !handsBySession[s.id]?.length) continue;
+    for (const id of computeTitles(uid, sofar, handsBySession, []).permanent) permanent.add(id);
+  }
+  return {
+    permanent: TITLES.filter((t) => permanent.has(t.id)).map((t) => t.id),
+    held: computeTitles(uid, sessions, handsBySession, groups).held,
+  };
 }
 
 /** Group titles: each goes to the single best (or worst) player among those with 50+ hands there. */
@@ -283,7 +330,7 @@ function heldTitles(uid: string, games: Game[], groups: Group[]): HeldTitle[] {
         for (const p of g.session.players) {
           if (!p.uid) continue; // name-only guests can't hold titles
           const list = perPlayer.get(p.uid) ?? [];
-          list.push({ won: h.winnerId === p.id, dealtIn: h.discarderId === p.id });
+          list.push({ won: wonBy(h, p.id), dealtIn: h.discarderId === p.id });
           perPlayer.set(p.uid, list);
         }
       }

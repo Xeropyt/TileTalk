@@ -8,8 +8,10 @@ export interface PatternDef {
   id: string;
   name: string;
   chinese?: string;
-  /** Tai (or faan) per time the pattern is counted. Ignored for limit hands. */
+  /** Tai (or faan, or han) per time the pattern is counted. Ignored for limit hands. */
   tai: number;
+  /** Han-and-fu rulesets: the value with an open hand. null means the hand must be closed. */
+  openTai?: number | null;
   /** A limit hand scores the ruleset's maximum tai. */
   limit?: boolean;
   /** How many times the pattern can be counted, e.g. 3 for dragon pungs. Defaults to 1. */
@@ -42,23 +44,96 @@ export interface PaymentRules {
   /** Tai cap. Limit hands score this. */
   maxTai: number;
   /**
-   * shooterDouble: the discarder pays double, the other two pay single (Singapore style).
-   * shooterOnly: only the discarder pays.
+   * shooterDouble: the discarder pays double, the others pay single (Singapore style).
+   * shooterOnly: the discarder pays for the whole table, so the winner gets the same total.
    */
   discard: 'shooterDouble' | 'shooterOnly';
   /** On a self-draw, each of the three other players pays payout x this. */
   selfDrawMultiplier: number;
-  /** A false win (詐胡) costs the player a hand of this many tai, paid to each of the other three. */
-  falseWinTai: number;
+  /**
+   * Points a false win (詐胡) costs, paid to each other player. Leave it out to charge the game's
+   * max tai as points: 5 each with a 5-tai cap.
+   */
+  falseWinPoints?: number;
+}
+
+/** Settings for Riichi games (han-and-fu scoring). See the TileTalk Riichi & 3-Player Rules Spec. */
+export interface RiichiOptions {
+  /** hanchan: East and South rounds. tonpuusen: East round only. */
+  gameLength: 'hanchan' | 'tonpuusen';
+  startingPoints: number;
+  returnPoints: number;
+  /** In thousands, best place first, one per player. */
+  uma: number[];
+  /** double: everyone who rons is paid. atamahane: only the winner nearest the discarder. */
+  multipleRon: 'double' | 'atamahane';
+  /** A player below 0 points ends the game. */
+  busting: boolean;
+  /** 4 han 30 fu and 3 han 60 fu round up to mangan. */
+  kiriageMangan: boolean;
+  /** 13+ han scores a yakuman; otherwise it's capped at sanbaiman. */
+  kazoeYakuman: boolean;
+  nagashiMangan: boolean;
+  /** Paid by noten players to tenpai players at an exhaustive draw, in total. */
+  tenpaiPayment: number;
+  /** Per honba counter. */
+  honbaValue: number;
+  /** Three players: a tsumo is short the missing North seat's share. Off splits the full value between the two payers. */
+  tsumoLoss: boolean;
+  /** Riichi sticks still on the table when the game ends. */
+  leftoverSticks: 'first' | 'lost';
+}
+
+/** Settings chosen for one game when it starts. Anything left out uses the ruleset's default. */
+export interface GameOptions {
+  /** Tai cap, and what a limit hand scores. */
+  maxTai: number;
+  /** Smallest hand that can win. */
+  minTai: number;
+  discard: PaymentRules['discard'];
+  players: 3 | 4;
+  /** Only for Riichi games. */
+  riichi?: RiichiOptions;
+}
+
+/** Paid the moment it happens, during the hand, whoever goes on to win. */
+export interface ImmediatePayoutDef {
+  id: string;
+  name: string;
+  chinese?: string;
+  description: string;
+  /**
+   * others: each other player pays.
+   * discarder: only the player who discarded the tile pays.
+   * owner: the player the tiles belong to pays (e.g. whose seat number a flower is). If they're
+   * the receiver's own, each other player pays instead.
+   */
+  payer: 'others' | 'discarder' | 'owner';
+  /** Points each paying player pays. */
+  amount: number;
+}
+
+/** A reference section on the Rules page, for rules that aren't scoring patterns. */
+export interface RulesNote {
+  title: string;
+  body: string;
 }
 
 export interface Ruleset {
   id: string;
   name: string;
   description: string;
+  /** tai: count tai and double per tai (house). hanFu: Japanese Riichi han and fu. */
+  scoringModel: 'tai' | 'hanFu';
+  /** Rules page headings, where this ruleset's groups mean something different. */
+  groupNames?: Partial<Record<PatternGroup, string>>;
+  notes?: RulesNote[];
+  /** Han-and-fu rulesets only: default settings for four and three players. */
+  riichiDefaults?: { 4: RiichiOptions; 3: RiichiOptions };
   /** 13 for Hong Kong/Singapore/Riichi/MCR, 16 for Taiwanese. Used once tile-based scoring arrives. */
   handSize: 13 | 16;
   patterns: PatternDef[];
   payment: PaymentRules;
+  immediatePayouts: ImmediatePayoutDef[];
   rotation: RotationRules;
 }

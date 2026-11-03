@@ -1,4 +1,4 @@
-import { computeTitles, ownedTitles, shownTitles } from '../titles';
+import { computeTitles, earnedTitles, ownedTitles, shownTitles } from '../titles';
 import type { Group, HandRecord, Player, Session, UserProfile } from '../../types';
 
 const ME = 'me';
@@ -10,16 +10,19 @@ const players: Player[] = [
 ];
 
 let clock = 0;
-const session = (id: string, seats = ['me', 'b', 'c', 'd']): Session =>
-  ({
+// Each game gets the next timestamp once, when it's made, so games sort in the order they're created.
+const session = (id: string, seats = ['me', 'b', 'c', 'd']): Session => {
+  const at = ++clock;
+  return {
     id,
     groupId: 'g1',
     players: seats.map((seat) => players.find((p) => p.id === seat)!),
     rulesetId: 'house',
     status: 'finished',
     scores: {},
-    createdAt: { toMillis: () => ++clock },
-  }) as unknown as Session;
+    createdAt: { toMillis: () => at },
+  } as unknown as Session;
+};
 
 /** A won hand: `winner` takes `amount` from `from` (or 2 from everyone on a self-draw). */
 const win = (
@@ -112,6 +115,21 @@ describe('computeTitles', () => {
     expect(computeTitles(ME, [session('s1')], { s1: kept.slice(0, 4) }, groups).permanent).not.toContain('dealer_dynasty');
   });
 
+  test('both winners of a double ron are credited', () => {
+    const doubleRon: HandRecord = {
+      ...win(1, 'b', 'c', 'd'),
+      riichi: { winners: [{ playerId: 'c' }, { playerId: ME }] } as HandRecord['riichi'],
+    };
+    expect(computeTitles(ME, [session('s1')], { s1: [doubleRon] }, groups).permanent).toContain('first_blood');
+    // And it isn't a hand where I neither won nor dealt in.
+    const quiet = Array.from({ length: 9 }, (_, i) => win(i + 2, 'b', 'c', 'd'));
+    const run = [...quiet.slice(0, 5), { ...doubleRon, handNumber: 7 }, ...quiet.slice(5)];
+    expect(computeTitles(ME, [session('s1')], { s1: run }, groups).permanent).not.toContain('big_hand_dreamer');
+    expect(computeTitles(ME, [session('s1')], { s1: [...quiet, win(11, 'b', 'c', 'd')] }, groups).permanent).toContain(
+      'big_hand_dreamer',
+    );
+  });
+
   test('founding member is never earned by playing', () => {
     const first = session('first');
     const { permanent } = computeTitles(ME, [first], { first: [win(1, 'b', ME, 'b')] }, groups);
@@ -152,6 +170,27 @@ describe('computeTitles', () => {
     expect(computeTitles('c', [s], { s1: hands }, groups).held.map((h) => h.id)).toEqual(['generous_donor']);
     // Below 50 hands nobody qualifies.
     expect(computeTitles('b', [s], { s1: hands.slice(0, 49) }, groups).held).toEqual([]);
+  });
+});
+
+describe('earnedTitles', () => {
+  // 20 wins, half of them self-drawn: Wall Whisperer.
+  const selfDrawGame = () => Array.from({ length: 20 }, (_, i) => win(i + 1, 'b', ME, i % 2 ? null : 'c'));
+  // 20 more wins, all off a discard: the self-draw share drops to 25%.
+  const discardGame = () => Array.from({ length: 20 }, (_, i) => win(i + 1, 'b', ME, 'c'));
+
+  test('a title stays once earned, even if later games would undo it', () => {
+    const first = session('first');
+    const second = session('second');
+    const hands = { first: selfDrawGame(), second: discardGame() };
+    expect(computeTitles(ME, [first, second], hands, groups).permanent).not.toContain('wall_whisperer');
+    expect(earnedTitles(ME, [first, second], hands, groups).permanent).toContain('wall_whisperer');
+  });
+
+  test('deleting the games that earned a title takes it away', () => {
+    const second = session('second');
+    expect(earnedTitles(ME, [second], { second: discardGame() }, groups).permanent).not.toContain('wall_whisperer');
+    expect(earnedTitles(ME, [], {}, groups).permanent).toEqual([]);
   });
 });
 

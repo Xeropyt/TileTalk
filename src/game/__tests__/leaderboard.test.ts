@@ -6,7 +6,8 @@ const player = (uid: string, stats: Partial<PlayerStats>): UserProfile => ({
   displayName: uid,
   avatar: '🀄',
   registered: true,
-  stats: { ...emptyStats(), ...stats },
+  // A house-only player: every win is a tai win.
+  stats: { ...emptyStats(), taiWins: stats.wins ?? 0, ...stats },
 });
 
 const ids = (r: ReturnType<typeof rankPlayers>) => r.ranked.map((p) => `${p.rank}:${p.profile.uid}`);
@@ -41,6 +42,11 @@ describe('rankPlayers', () => {
     const r = rankPlayers(players, 'avgTai');
     expect(ids(r)).toEqual(['1:ben', '2:amy']);
     expect(r.ranked[0].value).toBe(3);
+  });
+
+  test('average tai ignores Riichi wins', () => {
+    const mixed = player('eve', { handsPlayed: 30, wins: 15, taiWins: 5, totalTai: 20 });
+    expect(rankPlayers([mixed], 'avgTai').ranked[0].value).toBe(4);
   });
 
   test('players who never published stats count as zero', () => {

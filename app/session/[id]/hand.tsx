@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Protected, useSignedInUser } from '../../../src/auth';
+import { RiichiHandForm } from '../../../src/components/RiichiHandForm';
 import { recordHand, subscribeSession } from '../../../src/db';
 import {
   blockedBy,
@@ -10,11 +11,11 @@ import {
   contextProblem,
   falseWinPayments,
   falseWinPenalty,
-  getRuleset,
   HandContext,
   maxCountFor,
   PATTERN_GROUP_NAMES,
   PatternGroup,
+  rulesetFor,
   scoreHand,
   WinType,
 } from '../../../src/scoring';
@@ -47,7 +48,7 @@ function RecordHandScreen() {
 
   useEffect(() => subscribeSession(id, setSession, (e) => { setError(e.message); setSession(null); }), [id]);
 
-  const ruleset = getRuleset(session?.rulesetId ?? 'house');
+  const ruleset = rulesetFor(session?.rulesetId ?? 'house', session?.options);
   const claimed: ClaimedPattern[] = useMemo(
     () => Object.entries(counts).filter(([, c]) => c > 0).map(([pid, count]) => ({ id: pid, count })),
     [counts],
@@ -62,6 +63,7 @@ function RecordHandScreen() {
   if (session === undefined) return <Loading />;
   if (session === null) return <Screen><Muted>Game not found.</Muted><ErrorText message={error} /></Screen>;
   if (session.status !== 'active') return <Screen><Muted>This game has finished.</Muted></Screen>;
+  if (ruleset.scoringModel === 'hanFu') return <RiichiHandForm session={session} uid={user.uid} />;
 
   const players = session.players;
   const playerIds = players.map((p) => p.id);
@@ -136,8 +138,8 @@ function RecordHandScreen() {
               ))}
             </Row>
             <Muted>
-              They pay each other player {penalty} (a {ruleset.payment.falseWinTai}-tai hand). The hand is then replayed, and the
-              deal doesn’t move.
+              They pay each other player {penalty}, the game’s max tai in points. The hand is then replayed, and the deal
+              doesn’t move.
             </Muted>
           </Card>
           <Card style={styles.summary}>

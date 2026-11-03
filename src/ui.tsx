@@ -13,10 +13,19 @@ import {
 } from 'react-native';
 import { colors, radius } from './theme';
 
-export function Screen({ children, contentStyle }: { children: ReactNode; contentStyle?: StyleProp<ViewStyle> }) {
+export function Screen({
+  children,
+  contentStyle,
+  scrollEnabled = true,
+}: {
+  children: ReactNode;
+  contentStyle?: StyleProp<ViewStyle>;
+  scrollEnabled?: boolean;
+}) {
   return (
     <ScrollView
       style={styles.scroll}
+      scrollEnabled={scrollEnabled}
       contentContainerStyle={[styles.screen, contentStyle]}
       keyboardShouldPersistTaps="handled"
     >

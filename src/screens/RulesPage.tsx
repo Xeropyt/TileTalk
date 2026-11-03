@@ -17,6 +17,8 @@ import { Chip, Field, Muted, Row, SectionTitle, Title } from '../ui';
 import { TabPage } from './TabPage';
 
 const GROUP_ORDER: PatternGroup[] = ['bonus', 'sets', 'shape', 'winning', 'limit'];
+// Riichi: yaku first, then dora (which only count alongside a yaku), then yakuman.
+const HAN_FU_GROUP_ORDER: PatternGroup[] = ['winning', 'sets', 'shape', 'bonus', 'limit'];
 
 export function RulesPage() {
   const [rulesetId, setRulesetId] = usePreferredRuleset();
@@ -25,7 +27,13 @@ export function RulesPage() {
   const term = search.trim().toLowerCase();
   const matches = (p: PatternDef) =>
     !term || [p.name, p.chinese ?? '', p.description ?? ''].some((t) => t.toLowerCase().includes(term));
-  const showFalseWin = !term || ['false win', 'za-hu', 'zahu', '詐胡', 'penalty'].some((t) => t.includes(term) || term.includes(t));
+  const payouts = ruleset.immediatePayouts.filter(
+    (d) => !term || ['immediate payout', d.name, d.chinese ?? '', d.description].some((t) => t.toLowerCase().includes(term)),
+  );
+  const isRiichi = ruleset.scoringModel === 'hanFu';
+  const showFalseWin =
+    !isRiichi && (!term || ['false win', 'za-hu', 'zahu', '詐胡', 'penalty'].some((t) => t.includes(term) || term.includes(t)));
+  const notes = (ruleset.notes ?? []).filter((n) => !term || `${n.title} ${n.body}`.toLowerCase().includes(term));
 
   return (
     <TabPage>
@@ -39,25 +47,57 @@ export function RulesPage() {
           ))}
         </Row>
       ) : null}
-      <Muted>
-        {ruleset.name}: {ruleset.description} Hands are capped at {ruleset.payment.maxTai} tai, and you need at least{' '}
-        {ruleset.payment.minTai} to win.
-      </Muted>
+      {isRiichi ? (
+        <Muted>
+          {ruleset.name}: {ruleset.description} Han values are shown closed / open; “closed only” yaku need a closed hand. Game
+          length, uma, three players and more can be set for each game when you start it.
+        </Muted>
+      ) : (
+        <Muted>
+          {ruleset.name}: {ruleset.description} Hands are capped at {ruleset.payment.maxTai} tai, and you need at least{' '}
+          {ruleset.payment.minTai} to win. The min and max tai, three or four players, and who pays for a discard can be
+          changed for each game when you start it.
+        </Muted>
+      )}
 
       <Field label="Search" value={search} onChangeText={setSearch} placeholder="e.g. flush, 平胡, dragons" />
 
-      {GROUP_ORDER.map((group) => {
+      {(isRiichi ? HAN_FU_GROUP_ORDER : GROUP_ORDER).map((group) => {
         const patterns = ruleset.patterns.filter((p) => p.group === group && matches(p));
         if (patterns.length === 0) return null;
         return (
           <View key={group} style={styles.group}>
-            <SectionTitle>{PATTERN_GROUP_NAMES[group]}</SectionTitle>
+            <SectionTitle>{ruleset.groupNames?.[group] ?? PATTERN_GROUP_NAMES[group]}</SectionTitle>
             {patterns.map((p) => (
               <PatternEntry key={p.id} ruleset={ruleset} pattern={p} />
             ))}
           </View>
         );
       })}
+      {payouts.length > 0 ? (
+        <View style={styles.group}>
+          <SectionTitle>Immediate payouts</SectionTitle>
+          <Muted>Paid the moment they happen, whoever goes on to win the hand. Record them on the game screen.</Muted>
+          {payouts.map((d) => (
+            <View key={d.id} style={styles.entry}>
+              <View style={styles.entryHeader}>
+                <Text style={styles.entryName}>
+                  {d.name}
+                  {d.chinese ? `  ${d.chinese}` : ''}
+                </Text>
+                <Text style={styles.badge}>
+                  {d.payer === 'others'
+                    ? `+${d.amount} from each`
+                    : d.payer === 'discarder'
+                      ? `+${d.amount} from discarder`
+                      : `+${d.amount} from owner, +${d.amount * 3} if yours`}
+                </Text>
+              </View>
+              <Muted>{d.description}</Muted>
+            </View>
+          ))}
+        </View>
+      ) : null}
       {showFalseWin ? (
         <View style={styles.group}>
           <SectionTitle>Penalties</SectionTitle>
@@ -68,21 +108,42 @@ export function RulesPage() {
             </View>
             <Muted>
               Declaring a win with a hand that isn’t complete, or doesn’t reach {ruleset.payment.minTai} tai. You pay each
-              of the other three players {falseWinPenalty(ruleset.payment)}, the same as a {ruleset.payment.falseWinTai}-tai
-              hand. The hand is then replayed and the deal doesn’t move. Record it with False win on the Record hand screen.
+              other player the max tai in points ({falseWinPenalty(ruleset.payment)} with a {ruleset.payment.maxTai}-tai cap).
+              The hand is then replayed and the deal doesn’t move. Record it with False win on the Record hand screen.
             </Muted>
           </View>
         </View>
       ) : null}
-      {ruleset.patterns.every((p) => !matches(p)) && !showFalseWin ? <Muted>No hands match “{search.trim()}”.</Muted> : null}
+      {notes.length > 0 ? (
+        <View style={styles.group}>
+          <SectionTitle>How it works</SectionTitle>
+          {notes.map((n) => (
+            <View key={n.title} style={styles.entry}>
+              <Text style={styles.entryName}>{n.title}</Text>
+              <Muted>{n.body}</Muted>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {ruleset.patterns.every((p) => !matches(p)) && payouts.length === 0 && !showFalseWin && notes.length === 0 ? <Muted>No hands match “{search.trim()}”.</Muted> : null}
     </TabPage>
   );
+}
+
+/** e.g. "2 tai", "Limit (5 tai)", "2 han / 1 open", "1 han, closed only" or "Yakuman". */
+function patternValue(ruleset: Ruleset, p: PatternDef): string {
+  const each = (p.maxCount ?? 1) > 1 ? ' each' : '';
+  if (ruleset.scoringModel !== 'hanFu') return p.limit ? `Limit (${ruleset.payment.maxTai} tai)` : `${p.tai} tai${each}`;
+  if (p.limit) return p.openTai === null ? 'Yakuman, closed only' : 'Yakuman';
+  if (p.openTai === null) return `${p.tai} han${each}, closed only`;
+  if (p.openTai !== undefined && p.openTai !== p.tai) return `${p.tai} han / ${p.openTai} open`;
+  return `${p.tai} han${each}`;
 }
 
 function PatternEntry({ ruleset, pattern: p }: { ruleset: Ruleset; pattern: PatternDef }) {
   const [open, setOpen] = useState(false);
   const clashes = clashesWith(ruleset, p.id);
-  const value = p.limit ? `Limit (${ruleset.payment.maxTai} tai)` : `${p.tai} tai${(p.maxCount ?? 1) > 1 ? ' each' : ''}`;
+  const value = patternValue(ruleset, p);
 
   const notes: string[] = [];
   if ((p.maxCount ?? 1) > 1) notes.push(`Count it up to ${p.maxCount} times.`);

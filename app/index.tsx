@@ -15,25 +15,27 @@ import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../src/auth';
 import { GamesPage } from '../src/screens/GamesPage';
+import { HubPage } from '../src/screens/HubPage';
 import { LeaderboardPage } from '../src/screens/LeaderboardPage';
 import { ProfilePage } from '../src/screens/ProfilePage';
 import { RulesPage } from '../src/screens/RulesPage';
 import { colors } from '../src/theme';
 import { Tile } from '../src/ui';
 
-type TabId = 'games' | 'rules' | 'leaderboard' | 'profile';
+type TabId = 'games' | 'rules' | 'hub' | 'leaderboard' | 'profile';
 
 const TABS: { id: TabId; label: string; page: () => ReactNode }[] = [
   { id: 'games', label: 'Games', page: () => <GamesPage /> },
   { id: 'rules', label: 'Rules', page: () => <RulesPage /> },
+  { id: 'hub', label: 'Hub', page: () => <HubPage /> },
   { id: 'leaderboard', label: 'Leaderboard', page: () => <LeaderboardPage /> },
   { id: 'profile', label: 'Profile', page: () => <ProfilePage /> },
 ];
 
 /**
  * The main pages sit side by side in one horizontal pager. Swipe between them, or tap
- * the bar at the bottom to scroll to one. Link to a page with /?tab=rules, /?tab=leaderboard
- * or /?tab=profile.
+ * the bar at the bottom to scroll to one. Link to a page with /?tab=rules, /?tab=hub,
+ * /?tab=leaderboard or /?tab=profile.
  */
 export default function Home() {
   const { tab } = useLocalSearchParams<{ tab?: string }>();
@@ -111,6 +113,7 @@ function TabBar({
   const icons: Record<TabId, ReactNode> = {
     games: <Tile char="東" size={20} />,
     rules: <Tile char="書" size={20} color={colors.lacquer} />,
+    hub: <Tile char="聚" size={20} color={colors.tileGreen} />,
     leaderboard: <Tile char="榜" size={20} color={colors.tileBlue} />,
     profile: <Text style={styles.avatar}>{profile?.avatar ?? '🀄'}</Text>,
   };

@@ -3,10 +3,12 @@ import {
   calculatePayments,
   contextProblem,
   falseWinPayments,
+  immediatePayments,
   maxCountFor,
   scoreHand,
   taiToPayout,
 } from '../engine';
+import { rulesetFor } from '../index';
 import { houseRules } from '../rulesets/houseRules';
 import { initialTable, nextTableState, seatWindOf, wallBreak } from '../../game/winds';
 
@@ -154,9 +156,76 @@ describe('calculatePayments', () => {
   });
 });
 
+describe('immediatePayments', () => {
+  const payout = (id: string) => houseRules.immediatePayouts.find((p) => p.id === id)!;
+  const exposed = payout('exposed_kong');
+  const concealed = payout('concealed_kong');
+  const flowerPair = payout('flower_pair');
+
+  test('everyone else pays the kong', () => {
+    expect(immediatePayments(exposed, players, 'c', null)).toEqual({ a: -1, b: -1, c: 3, d: -1 });
+    expect(immediatePayments(concealed, players, 'a', null)).toEqual({ a: 3, b: -1, c: -1, d: -1 });
+  });
+
+  test('a flower pair is paid by its owner, or by everyone if it’s your own', () => {
+    expect(immediatePayments(flowerPair, players, 'a', 'c')).toEqual({ a: 1, b: 0, c: -1, d: 0 });
+    expect(immediatePayments(flowerPair, players, 'a', 'a')).toEqual({ a: 3, b: -1, c: -1, d: -1 });
+    expect(() => immediatePayments(flowerPair, players, 'a', null)).toThrow();
+  });
+
+  test('discarder-pays payouts need a discarder who isn’t the receiver', () => {
+    const shooter = { ...exposed, payer: 'discarder' as const, amount: 3 };
+    expect(immediatePayments(shooter, players, 'c', 'b')).toEqual({ a: 0, b: -3, c: 3, d: 0 });
+    expect(() => immediatePayments(shooter, players, 'c', null)).toThrow();
+    expect(() => immediatePayments(shooter, players, 'c', 'c')).toThrow();
+  });
+});
+
+describe('game options', () => {
+  test('max tai caps hands and sets what a limit hand scores', () => {
+    const eight = rulesetFor('house', { maxTai: 8 });
+    expect(scoreHand(eight, [{ id: 'thirteen_orphans', count: 1 }]).tai).toBe(8);
+    expect(scoreHand(eight, [{ id: 'full_flush', count: 1 }, { id: 'all_pungs', count: 1 }]).tai).toBe(6);
+    expect(scoreHand(rulesetFor('house', { maxTai: 3 }), [{ id: 'full_flush', count: 1 }]).tai).toBe(3);
+  });
+
+  test('a false win follows the game’s max tai', () => {
+    expect(falseWinPayments(players, 'b', rulesetFor('house', { maxTai: 3 }).payment)).toEqual({ a: 3, b: -9, c: 3, d: 3 });
+  });
+
+  test('shooter pays for the table: the winner gets the same, all from the discarder', () => {
+    const payment = rulesetFor('house', { discard: 'shooterOnly' }).payment;
+    const pay = (payout: number, ids = players) =>
+      calculatePayments({ playerIds: ids, winnerId: 'a', winType: 'discard', discarderId: 'b', payout, payment });
+    expect(pay(1)).toEqual({ a: 4, b: -4, c: 0, d: 0 });
+    expect(pay(4)).toEqual({ a: 16, b: -16, c: 0, d: 0 });
+    expect(pay(1, ['a', 'b', 'c'])).toEqual({ a: 3, b: -3, c: 0 });
+  });
+
+  test('min tai', () => {
+    expect(scoreHand(rulesetFor('house', { minTai: 3 }), [{ id: 'all_chows', count: 1 }]).valid).toBe(false);
+    expect(scoreHand(rulesetFor('house', { minTai: 0 }), []).valid).toBe(true);
+  });
+
+  test('three players: self-draws and false wins only involve those at the table', () => {
+    const three = ['a', 'b', 'c'];
+    const payment = houseRules.payment;
+    expect(calculatePayments({ playerIds: three, winnerId: 'a', winType: 'selfDraw', discarderId: null, payout: 2, payment })).toEqual({
+      a: 8,
+      b: -4,
+      c: -4,
+    });
+    expect(falseWinPayments(three, 'c', payment)).toEqual({ a: 5, b: 5, c: -10 });
+  });
+
+  test('older games without options use the ruleset as it is', () => {
+    expect(rulesetFor('house', undefined)).toBe(houseRules);
+  });
+});
+
 describe('falseWinPayments', () => {
-  test('the offender pays a limit hand to each other player', () => {
-    expect(falseWinPayments(players, 'b', houseRules.payment)).toEqual({ a: 16, b: -48, c: 16, d: 16 });
+  test('the offender pays the max tai in points to each other player', () => {
+    expect(falseWinPayments(players, 'b', houseRules.payment)).toEqual({ a: 5, b: -15, c: 5, d: 5 });
   });
 });
 
@@ -183,6 +252,16 @@ describe('winds', () => {
     for (let i = 0; i < 4; i++) s = nextTableState(s, { dealerWon: false, draw: false }, rules);
     expect(s.dealerIndex).toBe(0);
     expect(s.prevailingWind).toBe(1);
+  });
+
+  test('three players: the deal goes round three seats, and a game is 12 hands', () => {
+    expect([0, 1, 2].map((i) => seatWindOf(i, 1, 3))).toEqual([2, 0, 1]);
+    let s = initialTable();
+    for (let i = 0; i < 3; i++) s = nextTableState(s, { dealerWon: false, draw: false }, rules, 3);
+    expect(s.dealerIndex).toBe(0);
+    expect(s.prevailingWind).toBe(1);
+    for (let i = 0; i < 9; i++) s = nextTableState(s, { dealerWon: false, draw: false }, rules, 3);
+    expect(s.finished).toBe(true);
   });
 
   test('the game finishes after the North round', () => {

@@ -9,12 +9,15 @@ export function PlayerSeat({
   player,
   seatWind,
   score,
+  absolute,
   isDealer,
   dealerStreak,
 }: {
   player: Player;
   seatWind: Wind;
   score: number;
+  /** Riichi scores are totals (25,000), not gains and losses, so they're shown plain. */
+  absolute?: boolean;
   isDealer: boolean;
   dealerStreak: number;
 }) {
@@ -28,8 +31,8 @@ export function PlayerSeat({
       <Text style={styles.name} numberOfLines={1}>
         {player.avatar} {player.name}
       </Text>
-      <Text style={[styles.score, score > 0 && { color: colors.gain }, score < 0 && { color: colors.loss }]}>
-        {formatPoints(score)}
+      <Text style={[styles.score, !absolute && score > 0 && { color: colors.gain }, score < 0 && { color: colors.loss }]}>
+        {absolute ? score.toLocaleString() : formatPoints(score)}
       </Text>
       {isDealer ? (
         <Text style={styles.dealer}>Dealer{dealerStreak > 0 ? ` ×${dealerStreak + 1}` : ''}</Text>

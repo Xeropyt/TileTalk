@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Protected, useSignedInUser } from '../../src/auth';
-import { subscribeGroup, subscribeGroupSessions } from '../../src/db';
+import { deleteGroup, subscribeGroup, subscribeGroupSessions, subscribeIsAdmin } from '../../src/db';
 import { SessionRow } from '../../src/components/SessionRow';
 import { WIND_NAMES } from '../../src/game/winds';
 import { colors, radius } from '../../src/theme';
@@ -24,11 +24,15 @@ function GroupScreen() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [checkingStart, setCheckingStart] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => subscribeGroup(id, setGroup, (e) => { setError(e.message); setGroup(null); }), [id]);
   useEffect(() => subscribeGroupSessions(id, user.uid, setSessions, (e) => setError(e.message)), [id, user.uid]);
+  useEffect(() => subscribeIsAdmin(user.uid, setIsAdmin), [user.uid]);
 
-  if (group === undefined) return <Loading />;
+  if (group === undefined || deleting) return <Loading />;
   if (group === null) {
     return (
       <Screen>
@@ -130,6 +134,33 @@ function GroupScreen() {
           {finished.map((s) => (
             <SessionRow key={s.id} session={s} />
           ))}
+        </>
+      ) : null}
+
+      {/* Only admins can delete groups. The Firestore rules enforce this too. */}
+      {isAdmin ? (
+        <>
+          <Button
+            title={confirmDelete ? 'Tap again to delete this group' : 'Delete group'}
+            variant="secondary"
+            onPress={async () => {
+              if (!confirmDelete) return setConfirmDelete(true);
+              setDeleting(true);
+              try {
+                await deleteGroup(group);
+                if (router.canGoBack()) router.back();
+                else router.replace('/');
+              } catch (e) {
+                setError((e as Error).message);
+                setDeleting(false);
+                setConfirmDelete(false);
+              }
+            }}
+          />
+          <Muted>
+            Removes the group and its invite code for everyone. Its games stay in players’ history and career stats; delete
+            those one by one if they should go too.
+          </Muted>
         </>
       ) : null}
     </Screen>

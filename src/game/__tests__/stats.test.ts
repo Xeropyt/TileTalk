@@ -1,4 +1,5 @@
 import { computeStats } from '../stats';
+import { averageTai, normaliseStats } from '../../types';
 import type { HandRecord, Session } from '../../types';
 
 const session = (id: string, uid: string): Session =>
@@ -33,6 +34,7 @@ describe('computeStats', () => {
       selfDraws: 1,
       dealIns: 1,
       totalTai: 8,
+      taiWins: 2,
       biggestTai: 5,
       netPoints: 110,
     });
@@ -50,6 +52,43 @@ describe('computeStats', () => {
     const s = computeStats('me', [games[0]], { g1: [...hands.g1, penalty] });
     expect(s.handsPlayed).toBe(3);
     expect(s.netPoints).toBe(14 - 48);
+  });
+
+  test('immediate payouts count towards net points, not hands', () => {
+    const withKong = {
+      ...games[0],
+      payouts: [{ id: 'k', type: 'concealed_kong', receiverId: 'me', payerId: null, handNumber: 1, payments: { me: 6, guest_b: -2, u_c: -2, u_d: -2 }, createdBy: 'me', at: 0 }],
+    };
+    const s = computeStats('me', [withKong], { g1: hands.g1 });
+    expect(s.handsPlayed).toBe(3);
+    expect(s.netPoints).toBe(14 + 6);
+  });
+
+  test('riichi: both double-ron winners get the win, and riichi points stay out of the tai stats', () => {
+    const riichiGame = { ...session('r1', 'me'), rulesetId: 'riichi' } as Session;
+    const doubleRon = hand({
+      winnerId: 'u_c',
+      discarderId: 'guest_b',
+      tai: 3,
+      payments: { me: 2000, guest_b: -5900, u_c: 3900, u_d: 0 },
+      riichi: { winners: [{ playerId: 'u_c' }, { playerId: 'me' }] } as HandRecord['riichi'],
+    });
+    const s = computeStats('me', [riichiGame], { r1: [doubleRon] });
+    expect([s.handsPlayed, s.wins, s.netPoints, s.totalTai, s.taiWins]).toEqual([1, 1, 0, 0, 0]);
+  });
+
+  test('average tai only divides by wins in tai games', () => {
+    const riichiGame = { ...session('r1', 'me'), rulesetId: 'riichi' } as Session;
+    const riichiWin = hand({ winnerId: 'me', discarderId: 'u_c', tai: 4, payments: {} });
+    const s = computeStats('me', [...games, riichiGame], { ...hands, r1: [riichiWin, riichiWin] });
+    expect(s.wins).toBe(4);
+    expect(averageTai(s)).toBe(4); // (3 + 5) / 2 tai wins, not / 4 wins
+  });
+
+  test('profiles saved before taiWins existed count every win as a tai win', () => {
+    const old = { handsPlayed: 10, wins: 4, selfDraws: 1, dealIns: 2, totalTai: 12, biggestTai: 5, netPoints: 9 };
+    expect(averageTai(normaliseStats(old))).toBe(3);
+    expect(normaliseStats(undefined).taiWins).toBe(0);
   });
 
   test('skips games the account wasn’t seated in', () => {

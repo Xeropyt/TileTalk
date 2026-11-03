@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, radius } from '../theme';
-import type { PlayerStats } from '../types';
+import { averageTai, PlayerStats } from '../types';
 import { formatPoints, Muted } from '../ui';
 
 export function StatsGrid({ stats: s }: { stats: PlayerStats }) {
@@ -11,7 +11,7 @@ export function StatsGrid({ stats: s }: { stats: PlayerStats }) {
     ['Win rate', `${s.handsPlayed ? Math.round((s.wins / s.handsPlayed) * 100) : 0}%`],
     ['Self-draws', `${s.selfDraws}`],
     ['Deal-in rate', `${s.handsPlayed ? Math.round((s.dealIns / s.handsPlayed) * 100) : 0}%`],
-    ['Average tai', s.wins ? (s.totalTai / s.wins).toFixed(1) : '0'],
+    ['Average tai', s.taiWins ? averageTai(s).toFixed(1) : '0'],
     ['Biggest hand', `${s.biggestTai} tai`],
     ['Net points', formatPoints(s.netPoints)],
   ];

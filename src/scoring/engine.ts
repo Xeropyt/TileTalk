@@ -1,4 +1,4 @@
-import type { ClaimedPattern, HandContext, PatternDef, PaymentRules, Ruleset, WinType } from './types';
+import type { ClaimedPattern, HandContext, ImmediatePayoutDef, PatternDef, PaymentRules, Ruleset, WinType } from './types';
 
 export interface ScoreLine {
   id: string;
@@ -146,9 +146,34 @@ export function scoreHand(ruleset: Ruleset, claimed: ClaimedPattern[], context: 
   };
 }
 
-/** What a false win costs: the player pays this to each of the other three. */
+/**
+ * Points for an immediate payout, such as a kong. Always sums to zero. Discarder- and owner-pays
+ * payouts need `payerId`; for owner-pays, the receiver's own tiles mean everyone else pays.
+ */
+export function immediatePayments(
+  def: ImmediatePayoutDef,
+  playerIds: string[],
+  receiverId: string,
+  payerId: string | null,
+): Record<string, number> {
+  const deltas: Record<string, number> = Object.fromEntries(playerIds.map((id) => [id, 0]));
+  if (def.payer !== 'others' && !payerId) {
+    throw new Error(def.payer === 'discarder' ? 'Choose who discarded the tile.' : 'Choose whose seat it is.');
+  }
+  const everyone = def.payer === 'others' || (def.payer === 'owner' && payerId === receiverId);
+  const payers = everyone ? playerIds.filter((id) => id !== receiverId) : [payerId];
+  for (const id of payers) {
+    if (!id || id === receiverId || !(id in deltas)) throw new Error('Choose who pays.');
+    deltas[id] -= def.amount;
+    deltas[receiverId] += def.amount;
+  }
+  return deltas;
+}
+
+/** What a false win costs: the player pays this to each other player. */
 export function falseWinPenalty(payment: PaymentRules): number {
-  return taiToPayout(payment.falseWinTai, payment);
+  // The max tai as points, not a max-tai payout: 5 each with a 5-tai cap, not 16.
+  return payment.falseWinPoints ?? payment.maxTai;
 }
 
 /** Points for a false win: the offender pays the penalty to everyone else. Always sums to zero. */
@@ -191,7 +216,8 @@ export function calculatePayments(args: {
   }
 
   if (payment.discard === 'shooterOnly') {
-    pay(discarderId, payout);
+    // The discarder covers the whole table: what everyone would have paid, the double included.
+    pay(discarderId, payout * 2 + payout * (others.length - 1));
   } else {
     for (const id of others) pay(id, id === discarderId ? payout * 2 : payout);
   }

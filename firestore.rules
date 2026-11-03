@@ -54,7 +54,8 @@ service cloud.firestore {
     }
 
     match /groups/{groupId} {
-      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
+      // Admins can see every group, so they can moderate them.
+      allow read: if signedIn() && (request.auth.uid in resource.data.memberIds || isAdmin());
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.memberIds == [request.auth.uid];
@@ -69,6 +70,8 @@ service cloud.firestore {
           && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
         )
       );
+      // Only admins can delete a group. Its games are kept.
+      allow delete: if isAdmin();
     }
 
     // Invite codes point to a group. They can be looked up one at a time but not listed.
@@ -76,6 +79,48 @@ service cloud.firestore {
       allow get: if signedIn();
       allow create: if signedIn()
         && request.auth.uid in getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.memberIds;
+      allow delete: if isAdmin();
+    }
+
+    // Hub posts: anyone signed in can read and like them. One post per player per game.
+    // Likes can only add or remove your own uid. Authors and admins can delete posts.
+    match /posts/{postId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.authorUid == request.auth.uid
+        && postId == request.auth.uid + '_' + request.resource.data.sessionId
+        && request.resource.data.likedBy.size() == 0
+        && request.resource.data.commentCount == 0
+        && request.resource.data.tiles.size() <= 18
+        && request.resource.data.flowers.size() <= 8
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 280;
+      allow update: if signedIn() && (
+        (changes().hasOnly(['likedBy'])
+          && request.resource.data.likedBy.toSet().difference(resource.data.likedBy.toSet())
+            .union(resource.data.likedBy.toSet().difference(request.resource.data.likedBy.toSet()))
+            .hasOnly([request.auth.uid]))
+        // Comment counts go up or down by one, alongside adding or deleting a comment.
+        || (changes().hasOnly(['commentCount'])
+          && (request.resource.data.commentCount == resource.data.commentCount + 1
+            || request.resource.data.commentCount == resource.data.commentCount - 1))
+      );
+      allow delete: if signedIn() && (resource.data.authorUid == request.auth.uid || isAdmin());
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500;
+        // Your own comments, any comment on your post, or any comment if you're an admin.
+        allow delete: if signedIn() && (
+          resource.data.authorUid == request.auth.uid
+          || get(/databases/$(database)/documents/posts/$(postId)).data.authorUid == request.auth.uid
+          || isAdmin()
+        );
+      }
     }
 
     match /sessions/{sessionId} {
@@ -83,13 +128,12 @@ service cloud.firestore {
       allow create: if isGroupMember(request.resource.data.groupId)
         && request.auth.uid in request.resource.data.memberIds;
       allow update: if signedIn() && request.auth.uid in resource.data.memberIds;
-      // Only whoever started the game can delete it.
-      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+      // Only admins can delete games, so nobody can wipe the history, not even whoever started it.
+      allow delete: if isAdmin();
 
       match /hands/{handId} {
         allow read, create: if isSessionMember(sessionId);
-        allow delete: if signedIn()
-          && get(/databases/$(database)/documents/sessions/$(sessionId)).data.createdBy == request.auth.uid;
+        allow delete: if isAdmin();
       }
     }
   }

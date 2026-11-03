@@ -1,4 +1,4 @@
-import { emptyStats, PlayerStats, UserProfile } from '../types';
+import { averageTai, normaliseStats, PlayerStats, UserProfile } from '../types';
 
 export type LeaderboardSort = 'winRate' | 'wins' | 'netPoints' | 'biggestTai' | 'avgTai';
 
@@ -26,9 +26,9 @@ export const LEADERBOARD_SORTS: Record<LeaderboardSort, SortDef> = {
   biggestTai: { label: 'Biggest hand', value: (s) => s.biggestTai },
   avgTai: {
     label: 'Average tai',
-    value: (s) => (s.wins ? s.totalTai / s.wins : 0),
-    eligible: (s) => s.wins >= MIN_WINS_FOR_AVG_TAI,
-    eligibility: `at least ${MIN_WINS_FOR_AVG_TAI} wins`,
+    value: averageTai,
+    eligible: (s) => s.taiWins >= MIN_WINS_FOR_AVG_TAI,
+    eligibility: `at least ${MIN_WINS_FOR_AVG_TAI} wins in tai games`,
   },
 };
 
@@ -46,7 +46,7 @@ export interface RankedPlayer {
 export function rankPlayers(profiles: UserProfile[], sort: LeaderboardSort): { ranked: RankedPlayer[]; notRanked: number } {
   const def = LEADERBOARD_SORTS[sort];
   const rows = profiles.map((profile) => {
-    const stats = { ...emptyStats(), ...profile.stats };
+    const stats = normaliseStats(profile.stats);
     return { profile, stats, value: def.value(stats) };
   });
   const eligible = rows.filter((r) => def.eligible?.(r.stats) ?? true);

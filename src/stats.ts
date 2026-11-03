@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { subscribeHands, subscribeMyGroups, subscribeMySessions, updateProfile } from './db';
 import { computeStats } from './game/stats';
-import { computeTitles, findTitle, HeldTitle, titleKey } from './game/titles';
+import { earnedTitles, findTitle, HeldTitle, titleKey } from './game/titles';
 import type { Group, HandRecord, PlayerStats, Session, UserProfile } from './types';
 
 export interface PlayerRecord {
@@ -44,7 +44,7 @@ export function usePlayerRecord(uid: string): { record: PlayerRecord | null; err
   const record = useMemo(
     () =>
       loaded
-        ? { stats: computeStats(uid, sessions, hands), titles: computeTitles(uid, sessions, hands, groups) }
+        ? { stats: computeStats(uid, sessions, hands), titles: earnedTitles(uid, sessions, hands, groups) }
         : null,
     [loaded, uid, sessions, hands, groups],
   );
@@ -63,16 +63,15 @@ const sameJson = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JS
 
 /**
  * Copies this player's stats and titles onto their profile, so the leaderboard and other players
- * can see them without reading this player's games. Permanent titles are only ever added. Only
- * writes when something changed; other players' copies refresh when they next open the app.
+ * can see them without reading this player's games. Only writes when something changed; other
+ * players' copies refresh when they next open the app.
  */
 export function usePublishRecord(profile: UserProfile | null, record: PlayerRecord | null, registered: boolean) {
   useEffect(() => {
     if (!profile || !record) return;
-    // Grant-only titles never go in here; the Firestore rules would reject the whole update.
-    const earnedTitles = [...new Set([...(profile.earnedTitles ?? []), ...record.titles.permanent])]
-      .filter((id) => !findTitle(id)?.grantOnly)
-      .sort();
+    // Worked out from the games that still exist, so deleting a game takes away titles only it
+    // earned. Grant-only titles never go in here; the Firestore rules would reject the update.
+    const earnedTitles = record.titles.permanent.filter((id) => !findTitle(id)?.grantOnly).sort();
     const heldTitles = [...record.titles.held].sort((a, b) =>
       titleKey(a.id, a.groupId).localeCompare(titleKey(b.id, b.groupId)),
     );

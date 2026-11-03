@@ -6,20 +6,34 @@ import {
   getDoc,
   getDocs,
   increment,
+  limit,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { initialTable, nextTableState } from './game/winds';
-import { getRuleset } from './scoring';
-import type { ClaimedPattern, WinType } from './scoring/types';
-import type { Group, GroupMember, HandRecord, HandResult, Player, Session, UserProfile } from './types';
+import { initialTable, nextTableState, TableState } from './game/winds';
+import { getRuleset, nextRiichiTable, riichiOptionsOf, rulesetFor } from './scoring';
+import type { ClaimedPattern, GameOptions, WinType } from './scoring/types';
+import type {
+  Group,
+  GroupMember,
+  HandRecord,
+  HandResult,
+  HubComment,
+  HubPost,
+  PayoutRecord,
+  Player,
+  RiichiHandData,
+  Session,
+  UserProfile,
+} from './types';
 
 type Unsubscribe = () => void;
 type OnError = (e: Error) => void;
@@ -62,6 +76,26 @@ export function subscribeIsAdmin(uid: string, onData: (isAdmin: boolean) => void
     (snap) => onData(snap.exists()),
     () => onData(false),
   );
+}
+
+/** Admin only: every group, for moderation. */
+export function subscribeAllGroups(onData: (g: Group[]) => void, onError: OnError): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'groups'),
+    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Group).sort((a, b) => a.name.localeCompare(b.name))),
+    onError,
+  );
+}
+
+/**
+ * Admin only: deletes a group and its invite code. Its games are kept, so nobody loses their
+ * history, career stats or titles; delete games one by one if they should go too.
+ */
+export async function deleteGroup(group: Group) {
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'invites', group.inviteCode));
+  batch.delete(doc(db, 'groups', group.id));
+  await batch.commit();
 }
 
 /** Admin only: give or take back a grant-only title, such as Founding Member. */
@@ -128,9 +162,16 @@ export function subscribeGroup(groupId: string, onData: (g: Group | null) => voi
 
 // ---------- Sessions ----------
 
-export async function createSession(group: Group, players: Player[], rulesetId: string, uid: string): Promise<string> {
-  if (players.length !== 4) throw new Error('A game needs exactly four players.');
+export async function createSession(
+  group: Group,
+  players: Player[],
+  rulesetId: string,
+  options: GameOptions,
+  uid: string,
+): Promise<string> {
+  if (players.length !== options.players) throw new Error(`This game needs exactly ${options.players} players.`);
   const ruleset = getRuleset(rulesetId);
+  const riichi = ruleset.scoringModel === 'hanFu' ? riichiOptionsOf(ruleset, options, players.length) : null;
   const ref = doc(collection(db, 'sessions'));
   const batch = writeBatch(db);
   batch.set(ref, {
@@ -139,8 +180,10 @@ export async function createSession(group: Group, players: Player[], rulesetId: 
     players,
     rulesetId: ruleset.id,
     rulesetName: ruleset.name,
-    table: initialTable(),
-    scores: Object.fromEntries(players.map((p) => [p.id, 0])),
+    options,
+    table: riichi ? { ...initialTable(), honba: 0, riichiSticks: 0 } : initialTable(),
+    // Riichi players start with points; house games start at zero.
+    scores: Object.fromEntries(players.map((p) => [p.id, riichi?.startingPoints ?? 0])),
     status: 'active',
     createdBy: uid,
     createdAt: serverTimestamp(),
@@ -217,6 +260,52 @@ export async function deleteSession(sessionId: string) {
   }
 }
 
+// ---------- Immediate payouts ----------
+
+/** Records an immediate payout and adds it to the running scores in one go. */
+export async function recordPayout(
+  session: Session,
+  input: { type: string; receiverId: string; payerId: string | null; payments: Record<string, number> },
+  createdBy: string,
+): Promise<void> {
+  const sessionRef = doc(db, 'sessions', session.id);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(sessionRef);
+    if (!snap.exists()) throw new Error('This game no longer exists.');
+    const current = { id: snap.id, ...snap.data() } as Session;
+    if (current.status !== 'active') throw new Error('This game has already finished.');
+    const record: PayoutRecord = {
+      id: Math.random().toString(36).slice(2, 12),
+      ...input,
+      handNumber: current.table.handNumber,
+      createdBy,
+      at: Date.now(),
+    };
+    const update: Record<string, unknown> = { payouts: [...(current.payouts ?? []), record] };
+    for (const [pid, delta] of Object.entries(input.payments)) {
+      if (delta !== 0) update[`scores.${pid}`] = increment(delta);
+    }
+    tx.update(sessionRef, update);
+  });
+}
+
+/** Takes a payout back out, scores included. Safe if two people undo it at once. */
+export async function undoPayout(sessionId: string, payoutId: string): Promise<void> {
+  const sessionRef = doc(db, 'sessions', sessionId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(sessionRef);
+    if (!snap.exists()) throw new Error('This game no longer exists.');
+    const payouts = ((snap.data() as Session).payouts ?? []) as PayoutRecord[];
+    const target = payouts.find((p) => p.id === payoutId);
+    if (!target) return; // already undone
+    const update: Record<string, unknown> = { payouts: payouts.filter((p) => p.id !== payoutId) };
+    for (const [pid, delta] of Object.entries(target.payments)) {
+      if (delta !== 0) update[`scores.${pid}`] = increment(-delta);
+    }
+    tx.update(sessionRef, update);
+  });
+}
+
 // ---------- Recording a hand ----------
 
 export interface HandInput {
@@ -225,6 +314,7 @@ export interface HandInput {
   winnerId: string | null;
   discarderId: string | null;
   offenderId: string | null;
+  riichi?: RiichiHandData;
   patterns: ClaimedPattern[];
   tai: number;
   payout: number;
@@ -239,7 +329,7 @@ export interface HandInput {
 export async function recordHand(session: Session, input: HandInput, createdBy: string): Promise<void> {
   const sessionRef = doc(db, 'sessions', session.id);
   const handRef = doc(collection(sessionRef, 'hands'));
-  const ruleset = getRuleset(session.rulesetId);
+  const ruleset = rulesetFor(session.rulesetId, session.options);
 
   await runTransaction(db, async (tx) => {
     // All reads must come before any writes in a transaction.
@@ -252,11 +342,22 @@ export async function recordHand(session: Session, input: HandInput, createdBy: 
     }
 
     const dealer = current.players[current.table.dealerIndex];
-    const next = nextTableState(
-      current.table,
-      { dealerWon: input.winnerId === dealer.id, draw: input.result === 'draw', replay: input.result === 'falseWin' },
-      ruleset.rotation,
-    );
+    let next: TableState;
+    if (ruleset.scoringModel === 'hanFu') {
+      if (!input.riichi) throw new Error('Missing the Riichi details for this hand.');
+      const opts = riichiOptionsOf(ruleset, current.options, current.players.length);
+      next = nextRiichiTable(current.table, input.riichi.outcome, opts, current.players.length, input.riichi.sticksAfter);
+      // Busting: anyone below zero ends the game.
+      const busted = current.players.some((p) => (current.scores[p.id] ?? 0) + (input.payments[p.id] ?? 0) < 0);
+      if (opts.busting && busted) next = { ...next, finished: true };
+    } else {
+      next = nextTableState(
+        current.table,
+        { dealerWon: input.winnerId === dealer.id, draw: input.result === 'draw', replay: input.result === 'falseWin' },
+        ruleset.rotation,
+        current.players.length,
+      );
+    }
 
     tx.set(handRef, {
       handNumber: current.table.handNumber,
@@ -277,4 +378,74 @@ export async function recordHand(session: Session, input: HandInput, createdBy: 
     tx.update(sessionRef, sessionUpdate);
 
   });
+}
+
+// ---------- Hub ----------
+
+const FEED_SIZE = 50;
+
+export function subscribeFeed(onData: (p: HubPost[]) => void, onError: OnError): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(FEED_SIZE)),
+    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as HubPost)),
+    onError,
+  );
+}
+
+export function subscribePost(id: string, onData: (p: HubPost | null) => void, onError: OnError): Unsubscribe {
+  return onSnapshot(
+    doc(db, 'posts', id),
+    (snap) => onData(snap.exists() ? ({ id: snap.id, ...snap.data() } as HubPost) : null),
+    onError,
+  );
+}
+
+export function postIdFor(uid: string, sessionId: string): string {
+  return `${uid}_${sessionId}`;
+}
+
+/** Shares a hand. One post per player per game, so sharing the same game again is refused. */
+export async function sharePost(post: Omit<HubPost, 'id' | 'likedBy' | 'commentCount' | 'createdAt'>): Promise<string> {
+  const id = postIdFor(post.authorUid, post.sessionId);
+  const ref = doc(db, 'posts', id);
+  if ((await getDoc(ref)).exists()) throw new Error('You’ve already shared a hand from this game.');
+  await setDoc(ref, { ...post, likedBy: [], commentCount: 0, createdAt: serverTimestamp() });
+  return id;
+}
+
+export async function setLiked(postId: string, uid: string, liked: boolean) {
+  await updateDoc(doc(db, 'posts', postId), { likedBy: liked ? arrayUnion(uid) : arrayRemove(uid) });
+}
+
+export function subscribeComments(postId: string, onData: (c: HubComment[]) => void, onError: OnError): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'asc')),
+    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as HubComment)),
+    onError,
+  );
+}
+
+export async function addComment(postId: string, comment: Omit<HubComment, 'id' | 'createdAt'>) {
+  const batch = writeBatch(db);
+  batch.set(doc(collection(db, 'posts', postId, 'comments')), { ...comment, createdAt: serverTimestamp() });
+  batch.update(doc(db, 'posts', postId), { commentCount: increment(1) });
+  await batch.commit();
+}
+
+export async function deleteComment(postId: string, commentId: string) {
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'posts', postId, 'comments', commentId));
+  batch.update(doc(db, 'posts', postId), { commentCount: increment(-1) });
+  await batch.commit();
+}
+
+/** Deletes a post and its comments. The post goes last, so a retry can finish the job. */
+export async function deletePost(postId: string) {
+  const comments = (await getDocs(collection(db, 'posts', postId, 'comments'))).docs;
+  for (let i = 0; i === 0 || i < comments.length; i += 499) {
+    const batch = writeBatch(db);
+    comments.slice(i, i + 499).forEach((c) => batch.delete(c.ref));
+    if (i + 499 >= comments.length) batch.delete(doc(db, 'posts', postId));
+    await batch.commit();
+  }
 }

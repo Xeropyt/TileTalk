@@ -19,10 +19,11 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ title: 'TileTalk', headerShown: false }} />
         <Stack.Screen name="login" options={{ title: 'Account', presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="scan" options={{ title: 'Scan a hand' }} />
         <Stack.Screen name="profile/avatar" options={{ title: 'Avatar' }} />
         <Stack.Screen name="profile/titles" options={{ title: 'Titles' }} />
         <Stack.Screen name="player/[uid]" options={{ title: 'Player' }} />
+        <Stack.Screen name="hub/share" options={{ title: 'Share your hand' }} />
+        <Stack.Screen name="post/[id]" options={{ title: 'Hand' }} />
         <Stack.Screen name="group/[id]" options={{ title: 'Group' }} />
         <Stack.Screen name="session/new" options={{ title: 'New game' }} />
         <Stack.Screen name="session/[id]/index" options={{ title: 'Game' }} />

@@ -92,8 +92,22 @@ export default function Home() {
         ))}
       </Animated.ScrollView>
       <TabBar index={index} scrollX={scrollX} width={width} onSelect={(i) => goTo(i)} />
+      <StatusBarShade />
     </View>
   );
+}
+
+/**
+ * Phones draw the app under a see-through status bar, and the bar's own colour can't be set.
+ * The tab pages have no header, so this strip sits behind the clock and battery in the page
+ * colour, and pages scroll under it instead of showing through. Screens with a header don't need
+ * it: the header already runs up behind the clock. The app is dark in both light and dark mode
+ * (userInterfaceStyle in app.json), so the icons are always white.
+ */
+function StatusBarShade() {
+  const { top } = useSafeAreaInsets();
+  if (top === 0) return null;
+  return <View pointerEvents="none" style={[styles.shade, { height: top }]} />;
 }
 
 function TabBar({
@@ -158,6 +172,7 @@ function TabBar({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.felt },
+  shade: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.felt },
   pager: { flex: 1 },
   bar: {
     flexDirection: 'row',

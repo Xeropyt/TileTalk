@@ -1,8 +1,6 @@
 import React from 'react';
-import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider } from '../src/auth';
 import { colors } from '../src/theme';
 
@@ -31,23 +29,6 @@ export default function RootLayout() {
         <Stack.Screen name="session/[id]/index" options={{ title: 'Game' }} />
         <Stack.Screen name="session/[id]/hand" options={{ title: 'Record hand', presentation: 'modal', animation: 'slide_from_bottom' }} />
       </Stack>
-      <StatusBarShade />
     </AuthProvider>
-  );
-}
-
-/**
- * Android draws the app under a see-through status bar, and the bar's own colour can't be set.
- * This solid strip sits behind the clock and battery on every screen, so pages scroll under it
- * instead of showing through.
- */
-function StatusBarShade() {
-  const { top } = useSafeAreaInsets();
-  if (top === 0) return null;
-  return (
-    <View
-      pointerEvents="none"
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: top, backgroundColor: colors.feltDeep }}
-    />
   );
 }

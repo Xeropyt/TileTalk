@@ -33,6 +33,15 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
+      ],
+      "expo-status-bar",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "TileTalk uses the camera to photograph your winning hand.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
       ]
     ],
     "experiments": {

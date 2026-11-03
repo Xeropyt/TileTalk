@@ -1,0 +1,96 @@
+rules_version = '2';
+
+// Paste this into Firebase console > Firestore Database > Rules, then click Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isGroupMember(groupId) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+    }
+
+    function isSessionMember(sessionId) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/sessions/$(sessionId)).data.memberIds;
+    }
+
+    // Admins are added by hand in the Firebase console: a document in `admins` whose id is the
+    // admin's uid. Nobody can make themselves an admin from the app.
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    match /admins/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Titles only an admin can give. Keep in step with grantOnly titles in src/game/titles.ts.
+    function grantOnlyTitles() {
+      return ['founding_member'];
+    }
+
+    function changes() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // Profiles: anyone signed in can read them. Only you can edit yours, and you can't give
+    // yourself an admin-only title. Admins can give and take back those titles, and nothing else.
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == uid
+        && !('grantedTitles' in request.resource.data)
+        && !request.resource.data.get('earnedTitles', []).hasAny(grantOnlyTitles());
+      allow update: if signedIn() && (
+        (request.auth.uid == uid
+          && !changes().hasAny(['grantedTitles'])
+          && (!changes().hasAny(['earnedTitles'])
+            || !request.resource.data.get('earnedTitles', []).hasAny(grantOnlyTitles())))
+        || (isAdmin() && changes().hasOnly(['grantedTitles']))
+      );
+    }
+
+    match /groups/{groupId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.memberIds == [request.auth.uid];
+      allow update: if signedIn() && (
+        // Members can edit the group.
+        request.auth.uid in resource.data.memberIds
+        // Anyone with the invite code can add themselves, and only themselves.
+        || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'members'])
+          && request.resource.data.memberIds.removeAll(resource.data.memberIds).hasOnly([request.auth.uid])
+          && resource.data.memberIds.removeAll(request.resource.data.memberIds).size() == 0
+          && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
+        )
+      );
+    }
+
+    // Invite codes point to a group. They can be looked up one at a time but not listed.
+    match /invites/{code} {
+      allow get: if signedIn();
+      allow create: if signedIn()
+        && request.auth.uid in getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.memberIds;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
+      allow create: if isGroupMember(request.resource.data.groupId)
+        && request.auth.uid in request.resource.data.memberIds;
+      allow update: if signedIn() && request.auth.uid in resource.data.memberIds;
+      // Only whoever started the game can delete it.
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+
+      match /hands/{handId} {
+        allow read, create: if isSessionMember(sessionId);
+        allow delete: if signedIn()
+          && get(/databases/$(database)/documents/sessions/$(sessionId)).data.createdBy == request.auth.uid;
+      }
+    }
+  }
+}

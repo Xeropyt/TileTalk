@@ -59,8 +59,8 @@ const FLOWER_SCALE = 0.75;
 /** Space between the tile's edge and its artwork, as a fraction of the width. 0 lays the art exactly over front.svg. */
 const ART_INSET = 0;
 
-/** One tile, drawn from the SVG artwork. */
-export function TileImage({ code, width, dim }: { code: string; width: number; dim?: boolean }) {
+/** One tile, drawn from the SVG artwork. Memoised: pickers redraw often, and each tile is two images. */
+export const TileImage = React.memo(function TileImage({ code, width, dim }: { code: string; width: number; dim?: boolean }) {
   const inset = width * ART_INSET;
   return (
     <View
@@ -75,7 +75,7 @@ export function TileImage({ code, width, dim }: { code: string; width: number; d
       ) : null}
     </View>
   );
-}
+});
 
 /**
  * A whole hand, sized to fit the space it's given on one row, with flowers and seasons in a

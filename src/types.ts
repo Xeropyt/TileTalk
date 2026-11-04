@@ -146,6 +146,9 @@ export interface HandRecord {
   /** Riichi games only. */
   riichi?: RiichiHandData;
   patterns: ClaimedPattern[];
+  /** The winning tiles, when the hand was recorded with the tile calculator. */
+  tiles?: string[];
+  flowers?: string[];
   tai: number;
   payout: number;
   payments: Record<string, number>;

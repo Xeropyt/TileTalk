@@ -14,7 +14,7 @@ export interface ScoreResult {
   lines: ScoreLine[];
   /** Tai before the cap is applied. */
   rawTai: number;
-  /** Tai after the cap (or the max, for a limit hand). */
+  /** Tai after the cap. A limit hand counts as limitTai, but pays as the cap. */
   tai: number;
   isLimit: boolean;
   capped: boolean;
@@ -129,9 +129,10 @@ export function scoreHand(ruleset: Ruleset, claimed: ClaimedPattern[], context: 
   }
 
   const { maxTai, minTai } = ruleset.payment;
-  const tai = isLimit ? maxTai : Math.min(rawTai, maxTai);
-  const capped = !isLimit && rawTai > maxTai;
-  if (tai < minTai) errors.push(`A winning hand needs at least ${minTai} tai.`);
+  const uncapped = !!ruleset.payment.payoutCapOnly;
+  const tai = isLimit ? (ruleset.payment.limitTai ?? maxTai) : uncapped ? rawTai : Math.min(rawTai, maxTai);
+  const capped = !isLimit && !uncapped && rawTai > maxTai;
+  if (tai < minTai) errors.push(`A winning hand needs at least ${minTai} ${ruleset.unit ?? 'tai'}.`);
 
   const valid = errors.length === 0;
   return {

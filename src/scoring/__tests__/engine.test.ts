@@ -42,10 +42,12 @@ describe('scoreHand', () => {
     expect(r.capped).toBe(true);
   });
 
-  test('limit hands score the max', () => {
+  test('limit hands count as 13 tai and pay the max', () => {
     const r = scoreHand(houseRules, [{ id: 'thirteen_orphans', count: 1 }]);
     expect(r.isLimit).toBe(true);
-    expect(r.tai).toBe(5);
+    expect(r.tai).toBe(13);
+    // 5-tai cap: paid as 5 tai, not 13.
+    expect(r.payout).toBe(16);
   });
 
   test('rejects hands below the minimum', () => {
@@ -182,9 +184,10 @@ describe('immediatePayments', () => {
 });
 
 describe('game options', () => {
-  test('max tai caps hands and sets what a limit hand scores', () => {
+  test('max tai caps hands and sets what a limit hand pays', () => {
     const eight = rulesetFor('house', { maxTai: 8 });
-    expect(scoreHand(eight, [{ id: 'thirteen_orphans', count: 1 }]).tai).toBe(8);
+    expect(scoreHand(eight, [{ id: 'thirteen_orphans', count: 1 }]).tai).toBe(13);
+    expect(scoreHand(eight, [{ id: 'thirteen_orphans', count: 1 }]).payout).toBe(128);
     expect(scoreHand(eight, [{ id: 'full_flush', count: 1 }, { id: 'all_pungs', count: 1 }]).tai).toBe(6);
     expect(scoreHand(rulesetFor('house', { maxTai: 3 }), [{ id: 'full_flush', count: 1 }]).tai).toBe(3);
   });

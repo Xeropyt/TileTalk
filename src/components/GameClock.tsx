@@ -16,16 +16,21 @@ export function playingTime(session: Session, hands: HandRecord[] = [], now = Da
   return end > start ? end - start : null;
 }
 
+/** The current time, updated every second while `running`. */
+export function useNow(running: boolean): number {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+  return now;
+}
+
 /** A ticking clock while the game runs, and the total once it's over. */
 export function GameClock({ session, hands }: { session: Session; hands: HandRecord[] }) {
   const active = session.status === 'active';
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [active]);
-
+  const now = useNow(active);
   const ms = playingTime(session, hands, now);
   if (ms === null) return null;
   return (

@@ -5,8 +5,9 @@ import { emptyStats, HandRecord, PlayerStats, Session } from '../types';
  * Career stats for one account, worked out from the games that still exist. Nothing is stored,
  * so deleting a game takes its hands out of everyone's stats automatically.
  *
- * Points and tai only come from tai games: Riichi points are in the thousands and han aren't
- * tai, so mixing them in would swamp the numbers. Riichi hands still count as hands and wins.
+ * Points and tai only come from tai games, House and Hong Kong alike (faan count as tai here).
+ * Riichi points are in the thousands and han aren't tai, so mixing them in would swamp the
+ * numbers. Riichi hands still count as hands and wins.
  */
 export function computeStats(uid: string, sessions: Session[], handsBySession: Record<string, HandRecord[]>): PlayerStats {
   const s = emptyStats();

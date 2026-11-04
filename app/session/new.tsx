@@ -5,7 +5,7 @@ import { Protected, useSignedInUser } from '../../src/auth';
 import { SeatPicker } from '../../src/components/SeatPicker';
 import { createSession, subscribeGroup } from '../../src/db';
 import { usePreferredRuleset } from '../../src/preferences';
-import { defaultOptions, GameOptions, getRuleset, PaymentRules, RiichiOptions, RULESETS, taiToPayout } from '../../src/scoring';
+import { defaultOptions, GameOptions, getRuleset, PaymentRules, RiichiOptions, RULESETS, taiToPayout, unitOf } from '../../src/scoring';
 import { colors } from '../../src/theme';
 import type { Group, Player } from '../../src/types';
 import { Button, Card, Chip, ErrorText, Field, Loading, Muted, Row, Screen, SectionTitle } from '../../src/ui';
@@ -151,7 +151,12 @@ function NewSessionScreen() {
             onChange={(r) => setRiichiOverrides({ ...riichiOverrides, ...r })}
           />
         ) : (
-          <HouseSettings options={options} payment={ruleset.payment} onChange={(o) => setOverrides({ ...overrides, ...o })} />
+          <HouseSettings
+            options={options}
+            payment={ruleset.payment}
+            unit={unitOf(ruleset)}
+            onChange={(o) => setOverrides({ ...overrides, ...o })}
+          />
         )}
       </Card>
 
@@ -179,15 +184,17 @@ const formatUma = (uma: number[]) => uma.map((u) => (u > 0 ? `+${u}` : `${u}`)).
 function HouseSettings({
   options,
   payment,
+  unit,
   onChange,
 }: {
   options: GameOptions;
   payment: PaymentRules;
+  unit: string;
   onChange: (o: Partial<GameOptions>) => void;
 }) {
   return (
     <>
-      <Text style={styles.label}>Min tai to win</Text>
+      <Text style={styles.label}>Min {unit} to win</Text>
       <Row>
         {[...new Set([...MIN_TAI_CHOICES, payment.minTai])]
           .filter((t) => t <= options.maxTai)
@@ -196,7 +203,7 @@ function HouseSettings({
             <Chip key={t} label={`${t}`} selected={options.minTai === t} onPress={() => onChange({ minTai: t })} />
           ))}
       </Row>
-      <Text style={styles.label}>Max tai</Text>
+      <Text style={styles.label}>Max {unit}</Text>
       <Row>
         {[...new Set([...MAX_TAI_CHOICES, payment.maxTai])]
           .filter((t) => t >= options.minTai)
@@ -206,8 +213,9 @@ function HouseSettings({
           ))}
       </Row>
       <Muted>
-        A hand needs at least {options.minTai} tai to win. Hands are capped at {options.maxTai} tai, and limit hands score{' '}
-        {options.maxTai}. That pays {taiToPayout(options.maxTai, { ...payment, maxTai: options.maxTai })} per player.
+        A hand needs at least {options.minTai} {unit} to win. {payment.payoutCapOnly ? 'Payouts are' : 'Hands are'} capped at{' '}
+        {options.maxTai} {unit}, and limit hands score {payment.limitTai ?? options.maxTai}. The most a hand pays is{' '}
+        {taiToPayout(options.maxTai, { ...payment, maxTai: options.maxTai }).toLocaleString()} per player.
       </Muted>
       {options.players === 3 ? <Muted>No North seat. The deal goes round three players, so a full game is 12 hands.</Muted> : null}
 
@@ -222,7 +230,7 @@ function HouseSettings({
       </Row>
       <Muted>
         {options.discard === 'shooterOnly'
-          ? `The discarder pays everyone’s share (${options.players} on a 1-tai hand), so the winner gets the same as usual.`
+          ? `The discarder pays everyone’s share (${options.players} on a 1-${unit} hand), so the winner gets the same as usual.`
           : 'The discarder pays double, and everyone else pays single.'}
       </Muted>
     </>

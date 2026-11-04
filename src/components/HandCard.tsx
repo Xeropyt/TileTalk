@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { handName } from '../game/history';
 import { WIND_NAMES } from '../game/winds';
-import { limitName, Ruleset } from '../scoring';
+import { limitName, Ruleset, unitOf } from '../scoring';
 import { colors, radius } from '../theme';
 import type { HandRecord } from '../types';
 import { formatPoints, Muted } from '../ui';
@@ -27,12 +27,14 @@ export function HandCard({ hand: h, ruleset, nameOf }: { hand: HandRecord; rules
   const gain = h.payments[h.winnerId ?? ''] ?? 0;
   const how = h.winType === 'selfDraw' ? 'self-drew' : `won off ${nameOf(h.discarderId)}`;
   // Riichi hands are named by their value until yaku are recorded.
-  const title = h.riichi ? describeRiichi(h, nameOf) : (handName(ruleset, h.patterns) ?? `${h.tai} tai`);
+  const title = h.riichi ? describeRiichi(h, nameOf) : (handName(ruleset, h.patterns) ?? `${h.tai} ${unitOf(ruleset)}`);
   return (
     <View style={[styles.hand, styles.win]}>
       <View style={styles.winHeader}>
         <Text style={styles.winTitle}>{title}</Text>
-        {h.riichi ? null : <Text style={styles.taiBadge}>{h.tai} tai</Text>}
+        {h.riichi ? null : <Text style={styles.taiBadge}>
+            {h.tai} {unitOf(ruleset)}
+          </Text>}
       </View>
       <Text style={styles.winDetail}>
         {h.riichi ? '' : `${nameOf(h.winnerId)} ${how}, `}

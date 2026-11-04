@@ -314,6 +314,8 @@ export interface HandInput {
   offenderId: string | null;
   riichi?: RiichiHandData;
   patterns: ClaimedPattern[];
+  tiles?: string[];
+  flowers?: string[];
   tai: number;
   payout: number;
   payments: Record<string, number>;

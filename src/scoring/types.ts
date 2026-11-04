@@ -14,8 +14,10 @@ export interface PatternDef {
   tai: number;
   /** Han-and-fu rulesets: the value with an open hand. null means the hand must be closed. */
   openTai?: number | null;
-  /** A limit hand scores the ruleset's maximum tai. */
+  /** A limit hand scores the ruleset's limitTai (or its maximum), and pays the maximum. */
   limit?: boolean;
+  /** The tile calculator works this one out from the tiles, so it isn't asked about. */
+  fromTiles?: boolean;
   /** How many times the pattern can be counted, e.g. 3 for dragon pungs. Defaults to 1. */
   maxCount?: number;
   group: PatternGroup;
@@ -43,8 +45,12 @@ export interface PaymentRules {
   /** Points paid for a 1-tai hand. Each extra tai doubles it. */
   basePoints: number;
   minTai: number;
-  /** Tai cap. Limit hands score this. */
+  /** Tai cap. Limit hands pay this. */
   maxTai: number;
+  /** What a limit hand counts as, e.g. 13. It still pays as maxTai. Leave it out to use maxTai. */
+  limitTai?: number;
+  /** maxTai only caps the payout; the hand keeps its full tai (Hong Kong). Off: the tai is capped too. */
+  payoutCapOnly?: boolean;
   /**
    * shooterDouble: the discarder pays double, the others pay single (Singapore style).
    * shooterOnly: the discarder pays for the whole table, so the winner gets the same total.
@@ -127,6 +133,8 @@ export interface Ruleset {
   description: string;
   /** tai: count tai and double per tai (house). hanFu: Japanese Riichi han and fu. */
   scoringModel: 'tai' | 'hanFu';
+  /** What hand values are called in tai scoring: 'tai' (the default) or 'faan'. */
+  unit?: 'tai' | 'faan';
   /** Rules page headings, where this ruleset's groups mean something different. */
   groupNames?: Partial<Record<PatternGroup, string>>;
   notes?: RulesNote[];

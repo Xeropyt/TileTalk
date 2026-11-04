@@ -9,10 +9,13 @@ import { PayoutsCard, PayoutTotalsCard } from '../../../src/components/PayoutsCa
 import { PlayerSeat } from '../../../src/components/PlayerSeat';
 import { deleteSession, endSession, subscribeHands, subscribeIsAdmin, subscribeSession } from '../../../src/db';
 import { seatWindOf, WIND_CHARS, WIND_NAMES } from '../../../src/game/winds';
-import { riichiFinalResults, riichiOptionsOf, rulesetFor } from '../../../src/scoring';
+import { riichiFinalResults, riichiOptionsOf, rulesetFor, unitOf } from '../../../src/scoring';
 import { colors, radius } from '../../../src/theme';
 import type { HandRecord, Session } from '../../../src/types';
-import { Button, Card, ErrorText, formatPoints, Loading, Muted, Screen, SectionTitle, Tile } from '../../../src/ui';
+import { Button, Card, ErrorText, formatPoints, Loading, Muted, Row, Screen, SectionTitle, Tile } from '../../../src/ui';
+
+// Wins above this many tai (or faan, or han) are top hands, shown before the full breakdown.
+const TOP_HAND_TAI = 3;
 
 export default function SessionPage() {
   return (
@@ -30,6 +33,7 @@ function SessionScreen() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showAllHands, setShowAllHands] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const user = useSignedInUser();
 
@@ -63,6 +67,8 @@ function SessionScreen() {
     );
 
   const riichi = isRiichi ? riichiOptionsOf(ruleset, session.options, players.length) : null;
+  // Biggest first; equal hands stay newest first.
+  const topHands = hands.filter((h) => h.result === 'win' && h.tai > TOP_HAND_TAI).sort((a, b) => b.tai - a.tai);
   const standings = [...players].sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0));
   const riichiResults = riichi
     ? riichiFinalResults(
@@ -137,18 +143,48 @@ function SessionScreen() {
         </Card>
       ) : (
         <>
-          <Button title="Record hand" onPress={() => router.push(`/session/${session.id}/hand`)} />
+          <Row style={styles.recordRow}>
+            <Button title="Record hand" style={styles.recordButton} onPress={() => router.push(`/session/${session.id}/hand`)} />
+            {/* The tile calculator only knows tai scoring for now. */}
+            {!isRiichi ? (
+              <Button
+                title="Record by tiles"
+                variant="secondary"
+                style={styles.recordButton}
+                onPress={() => router.push(`/session/${session.id}/hand?mode=tiles`)}
+              />
+            ) : null}
+          </Row>
           <PayoutsCard session={session} uid={user.uid} />
           <DiceRoller dealerIndex={table.dealerIndex} playerNames={players.map((p) => p.name)} />
         </>
       )}
 
-      <SectionTitle>Hands</SectionTitle>
+      <SectionTitle>Top hands</SectionTitle>
       {hands.length === 0 ? (
         <Muted>No hands yet. Roll the dice, play, then record the result.</Muted>
+      ) : topHands.length === 0 ? (
+        <Muted>
+          No wins above {TOP_HAND_TAI} {unitOf(ruleset)} yet.
+        </Muted>
       ) : (
-        hands.map((h) => <HandCard key={h.id} hand={h} ruleset={ruleset} nameOf={nameOf} />)
+        topHands.map((h) => <HandCard key={h.id} hand={h} ruleset={ruleset} nameOf={nameOf} />)
       )}
+      {hands.length > 0 ? (
+        <Button
+          title={showAllHands ? 'Hide full breakdown' : `See full breakdown (${hands.length} ${hands.length === 1 ? 'hand' : 'hands'})`}
+          variant="secondary"
+          onPress={() => setShowAllHands(!showAllHands)}
+        />
+      ) : null}
+      {showAllHands ? (
+        <>
+          <SectionTitle>Every hand</SectionTitle>
+          {hands.map((h) => (
+            <HandCard key={h.id} hand={h} ruleset={ruleset} nameOf={nameOf} />
+          ))}
+        </>
+      ) : null}
       <PayoutTotalsCard session={session} />
 
       {!finished ? (
@@ -169,7 +205,7 @@ function SessionScreen() {
         Rules: {ruleset.description} This game:{' '}
         {riichi
           ? `${riichi.gameLength === 'hanchan' ? 'hanchan' : 'East round only'}, ${riichi.startingPoints.toLocaleString()} start, uma ${riichi.uma.map((u) => (u > 0 ? `+${u}` : `${u}`)).join(' / ')}, ${players.length} players.`
-          : `${ruleset.payment.minTai} to ${ruleset.payment.maxTai} tai, ${ruleset.payment.discard === 'shooterOnly' ? 'shooter pays for the table' : 'shooter pays double'}, ${players.length} players.`}
+          : `${ruleset.payment.minTai} to ${ruleset.payment.maxTai} ${unitOf(ruleset)}, ${ruleset.payment.discard === 'shooterOnly' ? 'shooter pays for the table' : 'shooter pays double'}, ${players.length} players.`}
       </Muted>
       {/* Only admins can delete games. The Firestore rules enforce this too. */}
       {isAdmin ? (
@@ -214,5 +250,7 @@ const styles = StyleSheet.create({
   centre: { alignItems: 'center', gap: 6, flexShrink: 1 },
   round: { color: colors.text, fontSize: 15, fontWeight: '700', textAlign: 'center' },
   standing: { flexDirection: 'row', justifyContent: 'space-between' },
+  recordRow: { flexWrap: 'nowrap' },
+  recordButton: { flex: 1 },
   standingText: { color: colors.text, fontSize: 16, fontWeight: '600' },
 });

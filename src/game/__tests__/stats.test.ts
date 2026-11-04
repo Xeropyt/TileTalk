@@ -85,6 +85,16 @@ describe('computeStats', () => {
     expect(averageTai(s)).toBe(4); // (3 + 5) / 2 tai wins, not / 4 wins
   });
 
+  test('Hong Kong faan count alongside House tai', () => {
+    const hkGame = { ...session('hk1', 'me'), rulesetId: 'hongkong' } as Session;
+    const hkWin = hand({ winnerId: 'me', discarderId: 'u_c', tai: 8, payments: { me: 256, guest_b: -64, u_c: -128, u_d: -64 } });
+    const s = computeStats('me', [...games, hkGame], { ...hands, hk1: [hkWin] });
+    expect(s.taiWins).toBe(3);
+    expect(s.biggestTai).toBe(8);
+    expect(averageTai(s)).toBe(16 / 3); // (3 + 5 + 8) / 3
+    expect(s.netPoints).toBe(16 - 2 + 96 + 256);
+  });
+
   test('profiles saved before taiWins existed count every win as a tai win', () => {
     const old = { handsPlayed: 10, wins: 4, selfDraws: 1, dealIns: 2, totalTai: 12, biggestTai: 5, netPoints: 9 };
     expect(averageTai(normaliseStats(old))).toBe(3);

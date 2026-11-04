@@ -1,10 +1,11 @@
 import { RIICHI_DEFAULTS } from './riichi';
+import { hongKongRules } from './rulesets/hongKong';
 import { houseRules } from './rulesets/houseRules';
 import { riichiRules } from './rulesets/riichi';
 import type { GameOptions, RiichiOptions, Ruleset } from './types';
 
 // Add new rulesets (Hong Kong, Singapore, Taiwanese, MCR...) to this list.
-export const RULESETS: Ruleset[] = [houseRules, riichiRules];
+export const RULESETS: Ruleset[] = [houseRules, hongKongRules, riichiRules];
 
 export function getRuleset(id: string): Ruleset {
   return RULESETS.find((r) => r.id === id) ?? houseRules;
@@ -42,9 +43,15 @@ export function riichiOptionsOf(ruleset: Ruleset, options: Partial<GameOptions> 
   return { ...defaults, ...options?.riichi };
 }
 
-/** A hand's value in the ruleset's own units, e.g. "3 tai", "4 han" or "Yakuman". */
+/** What a ruleset calls its hand values: "tai", "faan" or "han". */
+export function unitOf(ruleset: Ruleset): string {
+  return ruleset.scoringModel === 'hanFu' ? 'han' : (ruleset.unit ?? 'tai');
+}
+
+/** A hand's value in the ruleset's own units, e.g. "3 tai", "3 faan", "4 han" or "Yakuman". */
 export function formatHandValue(rulesetId: string, value: number): string {
-  if (getRuleset(rulesetId).scoringModel !== 'hanFu') return `${value} tai`;
+  const ruleset = getRuleset(rulesetId);
+  if (ruleset.scoringModel !== 'hanFu') return `${value} ${unitOf(ruleset)}`;
   if (value >= 13) return value >= 26 ? `${Math.floor(value / 13)}× yakuman` : 'Yakuman';
   return `${value} han`;
 }
@@ -58,5 +65,8 @@ export const PATTERN_GROUP_NAMES: Record<string, string> = {
 };
 
 export * from './engine';
+export * from './hongKong';
+export { HONG_KONG_ID, hongKongConfigFor } from './rulesets/hongKong';
 export * from './riichi';
+export * from './tileHand';
 export * from './types';

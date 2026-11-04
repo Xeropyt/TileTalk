@@ -11,6 +11,7 @@ import {
   PatternGroup,
   Ruleset,
   RULESETS,
+  unitOf,
 } from '../scoring';
 import { colors, radius } from '../theme';
 import { Chip, Field, Muted, Row, SectionTitle, Title } from '../ui';
@@ -54,8 +55,11 @@ export function RulesPage() {
         </Muted>
       ) : (
         <Muted>
-          {ruleset.name}: {ruleset.description} Hands are capped at {ruleset.payment.maxTai} tai, and you need at least{' '}
-          {ruleset.payment.minTai} to win. The min and max tai, three or four players, and who pays for a discard can be
+          {ruleset.name}: {ruleset.description} {ruleset.payment.payoutCapOnly ? 'Payouts are' : 'Hands are'} capped at{' '}
+          {ruleset.payment.maxTai} {unitOf(ruleset)}, and you need at least{' '}
+          {ruleset.payment.minTai} to win.
+          {ruleset.payment.limitTai ? ` Limit hands count as ${ruleset.payment.limitTai} ${unitOf(ruleset)} and pay the max.` : ''} The
+          min and max {unitOf(ruleset)}, three or four players, and who pays for a discard can be
           changed for each game when you start it.
         </Muted>
       )}
@@ -107,8 +111,9 @@ export function RulesPage() {
               <Text style={[styles.badge, styles.badgeLimit]}>−{falseWinPenalty(ruleset.payment)} to each player</Text>
             </View>
             <Muted>
-              Declaring a win with a hand that isn’t complete, or doesn’t reach {ruleset.payment.minTai} tai. You pay each
-              other player the max tai in points ({falseWinPenalty(ruleset.payment)} with a {ruleset.payment.maxTai}-tai cap).
+              Declaring a win with a hand that isn’t complete, or doesn’t reach {ruleset.payment.minTai} {unitOf(ruleset)}. You pay each
+              other player the max {unitOf(ruleset)} in points ({falseWinPenalty(ruleset.payment)} with a {ruleset.payment.maxTai}-
+              {unitOf(ruleset)} cap).
               The hand is then replayed and the deal doesn’t move. Record it with False win on the Record hand screen.
             </Muted>
           </View>
@@ -133,7 +138,8 @@ export function RulesPage() {
 /** e.g. "2 tai", "Limit (5 tai)", "2 han / 1 open", "1 han, closed only" or "Yakuman". */
 function patternValue(ruleset: Ruleset, p: PatternDef): string {
   const each = (p.maxCount ?? 1) > 1 ? ' each' : '';
-  if (ruleset.scoringModel !== 'hanFu') return p.limit ? `Limit (${ruleset.payment.maxTai} tai)` : `${p.tai} tai${each}`;
+  const unit = unitOf(ruleset);
+  if (ruleset.scoringModel !== 'hanFu') return p.limit ? `Limit (${ruleset.payment.limitTai ?? ruleset.payment.maxTai} ${unit})` : `${p.tai} ${unit}${each}`;
   if (p.limit) return p.openTai === null ? 'Yakuman, closed only' : 'Yakuman';
   if (p.openTai === null) return `${p.tai} han${each}, closed only`;
   if (p.openTai !== undefined && p.openTai !== p.tai) return `${p.tai} han / ${p.openTai} open`;

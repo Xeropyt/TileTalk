@@ -2,16 +2,25 @@ import React, { createContext, ReactNode, useContext, useEffect, useState } from
 import {
   createUserWithEmailAndPassword,
   EmailAuthProvider,
+  GoogleAuthProvider,
   linkWithCredential,
+  linkWithPopup,
   onAuthStateChanged,
   signInAnonymously,
+  signInWithCredential,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut as firebaseSignOut,
+  AuthCredential,
   User,
+  UserCredential,
 } from 'firebase/auth';
-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { Platform } from 'react-native';
 import { router } from 'expo-router';
-import { auth, db } from './firebase';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+import { auth, db, googleRedirectPage, googleWebClientId } from './firebase';
 import type { UserProfile } from './types';
 import { Button, ErrorText, Loading, Muted, Screen, Title } from './ui';
 
@@ -25,6 +34,11 @@ interface AuthValue {
   error: string | null;
   signIn(email: string, password: string): Promise<void>;
   signUp(email: string, password: string, displayName: string): Promise<void>;
+  /**
+   * Signs in with a Google popup. A guest's games come with them, unless that Google account
+   * already has a TileTalk account, which this switches to.
+   */
+  signInWithGoogle(displayName?: string): Promise<void>;
   signOut(): Promise<void>;
 }
 
@@ -99,6 +113,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       await setDoc(doc(db, 'users', uid), { displayName: displayName.trim() }, { merge: true });
     },
+    async signInWithGoogle(displayName) {
+      const current = auth.currentUser;
+      let result: UserCredential;
+      let keptGuest = false;
+      if (Platform.OS === 'web') {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        if (current?.isAnonymous) {
+          try {
+            // Keeps the guest's uid, like signUp.
+            result = await linkWithPopup(current, provider);
+            keptGuest = true;
+          } catch (e) {
+            // That Google account already has a TileTalk account. Switch to it without a second popup.
+            const cred = (e as { code?: string }).code === 'auth/credential-already-in-use'
+              ? GoogleAuthProvider.credentialFromError(e as Parameters<typeof GoogleAuthProvider.credentialFromError>[0])
+              : null;
+            if (!cred) throw e;
+            result = await signInWithCredential(auth, cred);
+          }
+        } else {
+          result = await signInWithPopup(auth, provider);
+        }
+      } else {
+        const cred = await googleCredentialFromBrowser();
+        if (current?.isAnonymous) {
+          try {
+            result = await linkWithCredential(current, cred);
+            keptGuest = true;
+          } catch (e) {
+            if ((e as { code?: string }).code !== 'auth/credential-already-in-use') throw e;
+            result = await signInWithCredential(auth, cred);
+          }
+        } else {
+          result = await signInWithCredential(auth, cred);
+        }
+      }
+      if (keptGuest) setIsGuest(false);
+      // A name typed on the sign-up form wins, then the one already on the profile, then Google's.
+      const ref = doc(db, 'users', result.user.uid);
+      const stored = ((await getDoc(ref)).data()?.displayName as string | undefined)?.trim() ?? '';
+      const name = (keptGuest && displayName?.trim()) || stored || result.user.displayName?.trim() || '';
+      if (name !== stored) await setDoc(ref, { displayName: name }, { merge: true });
+    },
     async signOut() {
       await firebaseSignOut(auth);
     },
@@ -142,6 +200,39 @@ export function Protected({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * The app can't show Firebase's Google popup, so it opens Google in a browser sheet instead. Google
+ * sends the result to public/google-auth.html, which hands it back to the app's own address.
+ */
+async function googleCredentialFromBrowser(): Promise<AuthCredential> {
+  if (!googleWebClientId) throw { code: 'tiletalk/google-not-set-up' };
+  const returnUrl = Linking.createURL('google-auth');
+  const params = new URLSearchParams({
+    client_id: googleWebClientId,
+    redirect_uri: googleRedirectPage,
+    response_type: 'id_token',
+    scope: 'openid email profile',
+    // Google requires one for this kind of sign-in.
+    nonce: Math.random().toString(36).slice(2) + Date.now().toString(36),
+    state: returnUrl,
+    prompt: 'select_account',
+  });
+  const res = await WebBrowser.openAuthSessionAsync(`https://accounts.google.com/o/oauth2/v2/auth?${params}`, returnUrl);
+  if (res.type !== 'success') throw { code: 'auth/user-cancelled' };
+  const query = Linking.parse(res.url).queryParams ?? {};
+  const idToken = query.id_token;
+  if (typeof idToken !== 'string') {
+    throw query.error === 'access_denied' ? { code: 'auth/user-cancelled' } : { code: 'tiletalk/google-failed', message: String(query.error ?? '') };
+  }
+  return GoogleAuthProvider.credential(idToken);
+}
+
+/** The person closed the Google window, so there's nothing to report. */
+export function isCancelledSignIn(e: unknown): boolean {
+  const code = (e as { code?: string })?.code;
+  return code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request' || code === 'auth/user-cancelled';
+}
+
 /** Turns Firebase error codes into messages people can act on. */
 export function friendlyAuthError(e: unknown): string {
   const code = (e as { code?: string })?.code ?? '';
@@ -158,6 +249,16 @@ export function friendlyAuthError(e: unknown): string {
     case 'auth/wrong-password':
     case 'auth/user-not-found':
       return 'Email or password is incorrect.';
+    case 'auth/popup-blocked':
+      return 'Your browser blocked the Google window. Allow pop-ups for TileTalk and try again.';
+    case 'auth/unauthorized-domain':
+      return 'Google sign-in isn’t allowed on this web address yet. Add it under Authentication > Settings > Authorized domains in the Firebase console.';
+    case 'auth/account-exists-with-different-credential':
+      return 'That Google account’s email already has a password account. Log in with your email and password instead.';
+    case 'tiletalk/google-not-set-up':
+      return 'Google sign-in isn’t set up in the app yet. Paste the Web client ID into src/firebase.ts.';
+    case 'tiletalk/google-failed':
+      return `Google sign-in didn’t finish${(e as { message?: string }).message ? ` (${(e as { message?: string }).message})` : ''}. Try again.`;
     case 'auth/network-request-failed':
       return 'No connection. Check your internet and try again.';
     case 'auth/operation-not-allowed':

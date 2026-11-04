@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TileTalk sign-in</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+        background: #0f3d32; color: #f3ead6; font-family: -apple-system, system-ui, sans-serif; text-align: center; padding: 24px; }
+    </style>
+  </head>
+  <body>
+    <p id="msg">Returning to TileTalk…</p>
+    <script>
+      // Google sends the sign-in here (the app can't be a Google redirect address itself), and this
+      // passes it back to the app address the app put in `state`. Only app addresses are allowed, so
+      // the token can't be sent to a website.
+      (function () {
+        var hash = new URLSearchParams(location.hash.slice(1));
+        var back = hash.get('state') || '';
+        if (!/^(exps?|tiletalk):\/\//.test(back)) {
+          document.getElementById('msg').textContent = 'This page only works when opened from the TileTalk app.';
+          return;
+        }
+        var out = new URLSearchParams();
+        if (hash.get('id_token')) out.set('id_token', hash.get('id_token'));
+        else out.set('error', hash.get('error') || 'no_token');
+        location.replace(back + (back.indexOf('?') < 0 ? '?' : '&') + out.toString());
+      })();
+    </script>
+  </body>
+</html>

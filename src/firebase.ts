@@ -37,4 +37,11 @@ function createAuth(): FirebaseAuth.Auth {
 }
 
 export const auth = createAuth();
+
+// Google sign-in in the app (Expo Go and builds). Paste the Web client ID from the Firebase console:
+// Authentication > Sign-in method > Google > Web SDK configuration.
+export const googleWebClientId = '791034227814-elqp8q8neao4s4i6plbu9osnmkgj0lk0.apps.googleusercontent.com';
+// public/google-auth.html, once deployed. Add this exact address to that client's Authorized redirect
+// URIs in Google Cloud console > APIs & Services > Credentials.
+export const googleRedirectPage = `https://${firebaseConfig.projectId}.web.app/google-auth.html`;
 export const db = getFirestore(app);

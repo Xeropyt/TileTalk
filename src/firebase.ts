@@ -1,6 +1,6 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import * as FirebaseAuth from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -44,4 +44,16 @@ export const googleWebClientId = '791034227814-elqp8q8neao4s4i6plbu9osnmkgj0lk0.
 // public/google-auth.html, once deployed. Add this exact address to that client's Authorized redirect
 // URIs in Google Cloud console > APIs & Services > Credentials.
 export const googleRedirectPage = `https://${firebaseConfig.projectId}.web.app/google-auth.html`;
-export const db = getFirestore(app);
+function createDb() {
+  if (Platform.OS === 'web') return getFirestore(app);
+  try {
+    // React Native can't read Firestore's streaming connection as it arrives, so live updates
+    // reached phones late, in bursts. Long polling delivers each change as soon as it happens.
+    return initializeFirestore(app, { experimentalForceLongPolling: true });
+  } catch {
+    // initializeFirestore throws if it already ran, e.g. after a fast refresh.
+    return getFirestore(app);
+  }
+}
+
+export const db = createDb();

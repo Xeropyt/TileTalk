@@ -36,9 +36,16 @@ export const houseRules: Ruleset = {
       id: 'exposed_kong',
       name: 'Exposed kong',
       chinese: '明槓',
-      description: 'You kong a discard, or add the fourth tile to a pung you’ve already shown.',
+      description: 'You add the fourth tile to a pung you’ve already shown.',
       payer: 'others',
       amount: 1,
+    },
+    {
+      id: 'discard_kong',
+      name: 'Kong off a discard',
+      description: 'You kong a tile someone discarded. Whoever discarded it pays you 2.',
+      payer: 'discarder',
+      amount: 2,
     },
     {
       id: 'concealed_kong',
@@ -75,6 +82,7 @@ export const houseRules: Ruleset = {
     {
       id: 'seat_flower',
       name: 'Own flower or season',
+      shortName: 'Own flower',
       chinese: '正花',
       tai: 1,
       maxCount: 2,
@@ -84,6 +92,7 @@ export const houseRules: Ruleset = {
     {
       id: 'flower_set',
       name: 'Complete set of flowers or seasons',
+      shortName: 'Flower set',
       chinese: '一台花',
       tai: 1,
       maxCount: 2,
@@ -95,6 +104,7 @@ export const houseRules: Ruleset = {
     {
       id: 'dragon_pung',
       name: 'Dragon pung or kong',
+      shortName: 'Dragon pung',
       chinese: '三元牌',
       tai: 1,
       maxCount: 2,
@@ -105,6 +115,7 @@ export const houseRules: Ruleset = {
     {
       id: 'seat_wind_pung',
       name: 'Seat wind pung or kong',
+      shortName: 'Seat wind',
       chinese: '門風',
       tai: 1,
       group: 'sets',
@@ -113,6 +124,7 @@ export const houseRules: Ruleset = {
     {
       id: 'prevailing_wind_pung',
       name: 'Round wind pung or kong',
+      shortName: 'Round wind',
       chinese: '圈風',
       tai: 1,
       group: 'sets',

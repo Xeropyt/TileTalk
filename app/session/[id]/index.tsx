@@ -3,11 +3,13 @@ import { StyleSheet, Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Protected, useSignedInUser } from '../../../src/auth';
 import { DiceRoller } from '../../../src/components/Dice';
-import { PayoutsCard } from '../../../src/components/PayoutsCard';
+import { GameClock } from '../../../src/components/GameClock';
+import { HandCard } from '../../../src/components/HandCard';
+import { PayoutsCard, PayoutTotalsCard } from '../../../src/components/PayoutsCard';
 import { PlayerSeat } from '../../../src/components/PlayerSeat';
 import { deleteSession, endSession, subscribeHands, subscribeIsAdmin, subscribeSession } from '../../../src/db';
 import { seatWindOf, WIND_CHARS, WIND_NAMES } from '../../../src/game/winds';
-import { limitName, riichiFinalResults, riichiOptionsOf, rulesetFor } from '../../../src/scoring';
+import { riichiFinalResults, riichiOptionsOf, rulesetFor } from '../../../src/scoring';
 import { colors, radius } from '../../../src/theme';
 import type { HandRecord, Session } from '../../../src/types';
 import { Button, Card, ErrorText, formatPoints, Loading, Muted, Screen, SectionTitle, Tile } from '../../../src/ui';
@@ -71,14 +73,6 @@ function SessionScreen() {
       )
     : null;
 
-  const describe = (h: HandRecord) => {
-    if (h.riichi) return describeRiichi(h, nameOf);
-    if (h.result === 'draw') return 'Draw, no winner';
-    if (h.result === 'falseWin') return `${nameOf(h.offenderId ?? null)} declared a false win (詐胡) and paid everyone ${h.payout}. Replayed.`;
-    if (h.winType === 'selfDraw') return `${nameOf(h.winnerId)} self-drew ${h.tai} tai`;
-    return `${nameOf(h.winnerId)} won ${h.tai} tai off ${nameOf(h.discarderId)}`;
-  };
-
   return (
     <Screen>
       <Stack.Screen options={{ title: session.rulesetName }} />
@@ -91,6 +85,7 @@ function SessionScreen() {
             <Tile char={WIND_CHARS[table.prevailingWind]} size={52} color={colors.lacquer} />
             <Text style={styles.round}>{finished ? 'Game over' : `${WIND_NAMES[table.prevailingWind]} round`}</Text>
             {!finished ? <Muted>Hand {table.handNumber}</Muted> : null}
+            <GameClock session={session} hands={hands} />
             {isRiichi && !finished ? (
               <Muted>
                 {table.honba ?? 0} honba, {table.riichiSticks ?? 0} {table.riichiSticks === 1 ? 'stick' : 'sticks'}
@@ -147,21 +142,14 @@ function SessionScreen() {
           <DiceRoller dealerIndex={table.dealerIndex} playerNames={players.map((p) => p.name)} />
         </>
       )}
-      {finished ? <PayoutsCard session={session} uid={user.uid} /> : null}
 
       <SectionTitle>Hands</SectionTitle>
       {hands.length === 0 ? (
         <Muted>No hands yet. Roll the dice, play, then record the result.</Muted>
       ) : (
-        hands.map((h) => (
-          <View key={h.id} style={styles.hand}>
-            <Text style={styles.handTitle}>
-              Hand {h.handNumber}, {WIND_NAMES[h.prevailingWind]} round
-            </Text>
-            <Muted>{describe(h)}</Muted>
-          </View>
-        ))
+        hands.map((h) => <HandCard key={h.id} hand={h} ruleset={ruleset} nameOf={nameOf} />)
       )}
+      <PayoutTotalsCard session={session} />
 
       {!finished ? (
         <Button
@@ -210,23 +198,6 @@ function SessionScreen() {
   );
 }
 
-function describeRiichi(h: HandRecord, nameOf: (id: string | null) => string): string {
-  const r = h.riichi!;
-  const riichis = r.declarers.length ? ` Riichi: ${r.declarers.map(nameOf).join(', ')}.` : '';
-  if (h.result === 'falseWin') return `${nameOf(h.offenderId ?? null)} made a chombo and paid a reverse mangan. Replayed.`;
-  if (r.drawType === 'abortive') return `Abortive draw. Replayed.${riichis}`;
-  if (r.drawType === 'exhaustive') {
-    if (r.nagashiId) return `Exhaustive draw: ${nameOf(r.nagashiId)} scored nagashi mangan.${riichis}`;
-    return `Exhaustive draw. Tenpai: ${r.tenpai.length ? r.tenpai.map(nameOf).join(', ') : 'nobody'}.${riichis}`;
-  }
-  const wins = r.winners.map((w) => {
-    const value = limitName(w.base) ?? `${w.han} han ${w.fu} fu`;
-    return `${nameOf(w.playerId)} ${value}`;
-  });
-  const how = h.winType === 'selfDraw' ? 'by tsumo' : `off ${nameOf(h.discarderId)}`;
-  return `${wins.join(' and ')} ${how}${r.winners.length > 1 ? ' (double ron)' : ''}.${riichis}`;
-}
-
 const styles = StyleSheet.create({
   table: {
     backgroundColor: colors.feltRaised,
@@ -244,11 +215,4 @@ const styles = StyleSheet.create({
   round: { color: colors.text, fontSize: 15, fontWeight: '700', textAlign: 'center' },
   standing: { flexDirection: 'row', justifyContent: 'space-between' },
   standingText: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  hand: {
-    backgroundColor: colors.feltDeep,
-    borderRadius: radius.control,
-    padding: 12,
-    gap: 2,
-  },
-  handTitle: { color: colors.text, fontSize: 15, fontWeight: '700' },
 });

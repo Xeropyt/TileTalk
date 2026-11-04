@@ -108,7 +108,10 @@ export interface Session {
   payouts?: PayoutRecord[];
   status: 'active' | 'finished';
   createdBy: string;
+  /** When the game started. The playing-time clock runs from here. */
   createdAt?: { toMillis(): number } | null;
+  /** When the game ended. Games that ended before this was recorded have none. */
+  finishedAt?: { toMillis(): number } | null;
 }
 
 export type HandResult = 'win' | 'draw' | 'falseWin';

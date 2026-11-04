@@ -232,7 +232,8 @@ export function subscribeMySessions(uid: string, onData: (s: Session[]) => void,
 export function subscribeSession(id: string, onData: (s: Session | null) => void, onError: OnError): Unsubscribe {
   return onSnapshot(
     doc(db, 'sessions', id),
-    (snap) => onData(snap.exists() ? ({ id: snap.id, ...snap.data() } as Session) : null),
+    // Estimate server times that haven't come back yet, so a new game's timer starts straight away.
+    (snap) => onData(snap.exists() ? ({ id: snap.id, ...snap.data({ serverTimestamps: 'estimate' }) } as Session) : null),
     onError,
   );
 }
@@ -243,7 +244,7 @@ export function subscribeHands(sessionId: string, onData: (h: HandRecord[]) => v
 }
 
 export async function endSession(sessionId: string) {
-  await updateDoc(doc(db, 'sessions', sessionId), { status: 'finished', 'table.finished': true });
+  await updateDoc(doc(db, 'sessions', sessionId), { status: 'finished', 'table.finished': true, finishedAt: serverTimestamp() });
 }
 
 /** Deletes a game and all its hands. Career stats come from the hands, so they update on their own. */
@@ -262,31 +263,28 @@ export async function deleteSession(sessionId: string) {
 
 // ---------- Immediate payouts ----------
 
-/** Records an immediate payout and adds it to the running scores in one go. */
+/**
+ * Records an immediate payout and adds it to the running scores in one write. Not a transaction,
+ * so it shows on this phone straight away instead of after a round trip to the server.
+ */
 export async function recordPayout(
   session: Session,
   input: { type: string; receiverId: string; payerId: string | null; payments: Record<string, number> },
   createdBy: string,
 ): Promise<void> {
-  const sessionRef = doc(db, 'sessions', session.id);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(sessionRef);
-    if (!snap.exists()) throw new Error('This game no longer exists.');
-    const current = { id: snap.id, ...snap.data() } as Session;
-    if (current.status !== 'active') throw new Error('This game has already finished.');
-    const record: PayoutRecord = {
-      id: Math.random().toString(36).slice(2, 12),
-      ...input,
-      handNumber: current.table.handNumber,
-      createdBy,
-      at: Date.now(),
-    };
-    const update: Record<string, unknown> = { payouts: [...(current.payouts ?? []), record] };
-    for (const [pid, delta] of Object.entries(input.payments)) {
-      if (delta !== 0) update[`scores.${pid}`] = increment(delta);
-    }
-    tx.update(sessionRef, update);
-  });
+  if (session.status !== 'active') throw new Error('This game has already finished.');
+  const record: PayoutRecord = {
+    id: Math.random().toString(36).slice(2, 12),
+    ...input,
+    handNumber: session.table.handNumber,
+    createdBy,
+    at: Date.now(),
+  };
+  const update: Record<string, unknown> = { payouts: arrayUnion(record) };
+  for (const [pid, delta] of Object.entries(input.payments)) {
+    if (delta !== 0) update[`scores.${pid}`] = increment(delta);
+  }
+  await updateDoc(doc(db, 'sessions', session.id), update);
 }
 
 /** Takes a payout back out, scores included. Safe if two people undo it at once. */
@@ -322,62 +320,63 @@ export interface HandInput {
 }
 
 /**
- * Saves a hand, moves the dealer and round wind on and updates the running scores, all in
- * one transaction, so the hand and the scores can't drift apart. Career stats aren't stored;
- * they're worked out from the saved hands (see stats.ts).
+ * Saves a hand, moves the dealer and round wind on and updates the running scores in one batch,
+ * so the hand and the scores can't drift apart. A batch rather than a transaction, so every phone
+ * sees it without waiting on an extra round trip. Career stats aren't stored; they're worked out
+ * from the saved hands (see stats.ts).
  */
 export async function recordHand(session: Session, input: HandInput, createdBy: string): Promise<void> {
+  if (session.status !== 'active') throw new Error('This game has already finished.');
   const sessionRef = doc(db, 'sessions', session.id);
-  const handRef = doc(collection(sessionRef, 'hands'));
+  // One id per hand number. Hands can only be created, never overwritten (see firestore.rules), so
+  // if someone else has just recorded this hand, the whole batch is refused.
+  const handRef = doc(collection(sessionRef, 'hands'), `h${session.table.handNumber}`);
   const ruleset = rulesetFor(session.rulesetId, session.options);
 
-  await runTransaction(db, async (tx) => {
-    // All reads must come before any writes in a transaction.
-    const snap = await tx.get(sessionRef);
-    if (!snap.exists()) throw new Error('This game no longer exists.');
-    const current = { id: snap.id, ...snap.data() } as Session;
-    if (current.status !== 'active') throw new Error('This game has already finished.');
-    if (current.table.handNumber !== session.table.handNumber) {
+  const dealer = session.players[session.table.dealerIndex];
+  let next: TableState;
+  if (ruleset.scoringModel === 'hanFu') {
+    if (!input.riichi) throw new Error('Missing the Riichi details for this hand.');
+    const opts = riichiOptionsOf(ruleset, session.options, session.players.length);
+    next = nextRiichiTable(session.table, input.riichi.outcome, opts, session.players.length, input.riichi.sticksAfter);
+    // Busting: anyone below zero ends the game.
+    const busted = session.players.some((p) => (session.scores[p.id] ?? 0) + (input.payments[p.id] ?? 0) < 0);
+    if (opts.busting && busted) next = { ...next, finished: true };
+  } else {
+    next = nextTableState(
+      session.table,
+      { dealerWon: input.winnerId === dealer.id, draw: input.result === 'draw', replay: input.result === 'falseWin' },
+      ruleset.rotation,
+      session.players.length,
+    );
+  }
+
+  const batch = writeBatch(db);
+  batch.set(handRef, {
+    handNumber: session.table.handNumber,
+    prevailingWind: session.table.prevailingWind,
+    dealerId: dealer.id,
+    ...input,
+    createdBy,
+    createdAt: serverTimestamp(),
+  });
+  const sessionUpdate: Record<string, unknown> = {
+    table: next,
+    status: next.finished ? 'finished' : 'active',
+  };
+  if (next.finished) sessionUpdate.finishedAt = serverTimestamp();
+  for (const [playerId, delta] of Object.entries(input.payments)) {
+    if (delta !== 0) sessionUpdate[`scores.${playerId}`] = increment(delta);
+  }
+  batch.update(sessionRef, sessionUpdate);
+  try {
+    await batch.commit();
+  } catch (e) {
+    if ((e as { code?: string }).code === 'permission-denied') {
       throw new Error('Someone else just recorded this hand. Check the history before adding it again.');
     }
-
-    const dealer = current.players[current.table.dealerIndex];
-    let next: TableState;
-    if (ruleset.scoringModel === 'hanFu') {
-      if (!input.riichi) throw new Error('Missing the Riichi details for this hand.');
-      const opts = riichiOptionsOf(ruleset, current.options, current.players.length);
-      next = nextRiichiTable(current.table, input.riichi.outcome, opts, current.players.length, input.riichi.sticksAfter);
-      // Busting: anyone below zero ends the game.
-      const busted = current.players.some((p) => (current.scores[p.id] ?? 0) + (input.payments[p.id] ?? 0) < 0);
-      if (opts.busting && busted) next = { ...next, finished: true };
-    } else {
-      next = nextTableState(
-        current.table,
-        { dealerWon: input.winnerId === dealer.id, draw: input.result === 'draw', replay: input.result === 'falseWin' },
-        ruleset.rotation,
-        current.players.length,
-      );
-    }
-
-    tx.set(handRef, {
-      handNumber: current.table.handNumber,
-      prevailingWind: current.table.prevailingWind,
-      dealerId: dealer.id,
-      ...input,
-      createdBy,
-      createdAt: serverTimestamp(),
-    });
-
-    const sessionUpdate: Record<string, unknown> = {
-      table: next,
-      status: next.finished ? 'finished' : 'active',
-    };
-    for (const [playerId, delta] of Object.entries(input.payments)) {
-      if (delta !== 0) sessionUpdate[`scores.${playerId}`] = increment(delta);
-    }
-    tx.update(sessionRef, sessionUpdate);
-
-  });
+    throw e;
+  }
 }
 
 // ---------- Hub ----------

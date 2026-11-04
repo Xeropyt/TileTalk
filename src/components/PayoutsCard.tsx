@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { recordPayout, undoPayout } from '../db';
+import { payoutTotals } from '../game/history';
 import { seatWindOf, WIND_NAMES } from '../game/winds';
 import { immediatePayments, ImmediatePayoutDef, rulesetFor } from '../scoring';
 import { colors, radius } from '../theme';
 import type { PayoutRecord, Session } from '../types';
 import { Button, Card, Chip, ErrorText, formatPoints, Muted, Row, SectionTitle } from '../ui';
 
-/** Buttons for kongs, flower kongs and the like, which are paid the moment they happen. */
+/**
+ * Buttons for kongs, flower kongs and the like, which are paid the moment they happen, and this
+ * hand's payouts so far, which can still be undone. Earlier hands' are in PayoutTotalsCard.
+ */
 export function PayoutsCard({ session, uid }: { session: Session; uid: string }) {
   const ruleset = rulesetFor(session.rulesetId, session.options);
   const others = session.players.length - 1;
@@ -16,12 +20,12 @@ export function PayoutsCard({ session, uid }: { session: Session; uid: string })
   const [type, setType] = useState<ImmediatePayoutDef | null>(null);
   const [receiverId, setReceiverId] = useState<string | null>(null);
   const [payerId, setPayerId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [confirmUndo, setConfirmUndo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const payouts = [...(session.payouts ?? [])].reverse();
-  if (defs.length === 0 || (!active && payouts.length === 0)) return null;
+  // Once the hand is recorded its payouts are part of history, so only this hand's can be undone.
+  const payouts = (session.payouts ?? []).filter((p) => p.handNumber === session.table.handNumber).reverse();
+  if (defs.length === 0 || !active) return null;
 
   const nameOf = (pid: string | null) => session.players.find((p) => p.id === pid)?.name ?? 'Someone';
   const playerIds = session.players.map((p) => p.id);
@@ -32,19 +36,20 @@ export function PayoutsCard({ session, uid }: { session: Session; uid: string })
     setPayerId(null);
   };
 
-  const record = async () => {
+  const record = () => {
     if (!type || !receiverId) return;
-    setBusy(true);
     setError(null);
+    let payments: Record<string, number>;
     try {
-      const payments = immediatePayments(type, playerIds, receiverId, payerId);
-      await recordPayout(session, { type: type.id, receiverId, payerId: type.payer === 'others' ? null : payerId, payments }, uid);
-      reset();
+      payments = immediatePayments(type, playerIds, receiverId, payerId);
     } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+      return setError((e as Error).message);
     }
+    // Shows on this phone at once; the server catches up behind it. Errors still come back here.
+    recordPayout(session, { type: type.id, receiverId, payerId: type.payer === 'others' ? null : payerId, payments }, uid).catch(
+      (e) => setError((e as Error).message),
+    );
+    reset();
   };
 
   const undo = async (p: PayoutRecord) => {
@@ -74,29 +79,25 @@ export function PayoutsCard({ session, uid }: { session: Session; uid: string })
   };
 
   return (
-    <Card>
+    <Card style={styles.payoutCard}>
       <SectionTitle>Immediate payouts</SectionTitle>
-      {active ? (
-        <>
-          <Muted>Tap one the moment it happens. It’s paid straight away, whoever wins the hand.</Muted>
-          <Row>
-            {defs.map((d) => (
-              <Chip
-                key={d.id}
-                label={`${d.name}${d.chinese ? ` ${d.chinese}` : ''}`}
-                selected={type?.id === d.id}
-                onPress={() => {
-                  if (type?.id === d.id) return reset();
-                  setType(d);
-                  setPayerId(null);
-                }}
-              />
-            ))}
-          </Row>
-        </>
-      ) : null}
+      <Muted>Tap one the moment it happens. It’s paid straight away, whoever wins the hand.</Muted>
+      <Row>
+        {defs.map((d) => (
+          <Chip
+            key={d.id}
+            label={`${d.name}${d.chinese ? ` ${d.chinese}` : ''}`}
+            selected={type?.id === d.id}
+            onPress={() => {
+              if (type?.id === d.id) return reset();
+              setType(d);
+              setPayerId(null);
+            }}
+          />
+        ))}
+      </Row>
 
-      {active && type ? (
+      {type ? (
         <View style={styles.form}>
           <Text style={styles.label}>Who got it?</Text>
           <Row>
@@ -143,7 +144,7 @@ export function PayoutsCard({ session, uid }: { session: Session; uid: string })
             </>
           ) : null}
           <Muted>{preview()}</Muted>
-          <Button title="Record payout" onPress={record} disabled={!ready} loading={busy} />
+          <Button title="Record payout" onPress={record} disabled={!ready} />
           <Button title="Cancel" variant="secondary" onPress={reset} />
         </View>
       ) : null}
@@ -152,28 +153,63 @@ export function PayoutsCard({ session, uid }: { session: Session; uid: string })
 
       {payouts.length > 0 ? (
         <View style={styles.list}>
-          {payouts.map((p) => {
-            // Once the hand is recorded its payouts are part of history, so only this hand's can be undone.
-            const undoable = active && p.handNumber === session.table.handNumber;
-            return (
-              <View key={p.id} style={styles.item}>
-                <View style={styles.itemText}>
-                  <Text style={styles.itemTitle}>{describe(p)}</Text>
-                  <Muted>Hand {p.handNumber}</Muted>
-                </View>
-                {undoable ? (
-                  <Chip label={confirmUndo === p.id ? 'Tap to undo' : 'Undo'} selected={confirmUndo === p.id} onPress={() => undo(p)} />
-                ) : null}
-              </View>
-            );
-          })}
+          <Text style={styles.label}>This hand</Text>
+          {payouts.map((p) => (
+            <View key={p.id} style={styles.item}>
+              <Text style={[styles.itemTitle, styles.itemText]}>{describe(p)}</Text>
+              <Chip label={confirmUndo === p.id ? 'Tap to undo' : 'Undo'} selected={confirmUndo === p.id} onPress={() => undo(p)} />
+            </View>
+          ))}
         </View>
       ) : null}
     </Card>
   );
 }
 
+/** Every immediate payout in the game so far, added up per player. */
+export function PayoutTotalsCard({ session }: { session: Session }) {
+  const payouts = session.payouts ?? [];
+  if (payouts.length === 0) return null;
+  const totals = payoutTotals(session.players, payouts);
+  return (
+    <Card style={styles.payoutCard}>
+      <SectionTitle>Immediate payouts</SectionTitle>
+      <Muted>
+        {payouts.length} {payouts.length === 1 ? 'payout' : 'payouts'} for kongs, flowers and the like. Already in the scores.
+      </Muted>
+      <View style={styles.tableRow}>
+        <Text style={[styles.headCell, styles.nameCell]}>Player</Text>
+        <Text style={styles.headCell}>Earned</Text>
+        <Text style={styles.headCell}>Lost</Text>
+        <Text style={styles.headCell}>Net</Text>
+      </View>
+      {totals.map((t) => {
+        const p = session.players.find((x) => x.id === t.playerId)!;
+        return (
+          <View key={t.playerId} style={styles.tableRow}>
+            <Text style={[styles.cell, styles.nameCell]} numberOfLines={1}>
+              {p.avatar} {p.name}
+            </Text>
+            <Text style={[styles.cell, t.earned ? { color: colors.gain } : null]}>{t.earned ? `+${t.earned}` : '0'}</Text>
+            <Text style={[styles.cell, t.lost ? { color: colors.loss } : null]}>{t.lost ? `−${t.lost}` : '0'}</Text>
+            <Text style={[styles.cell, styles.netCell, { color: t.net > 0 ? colors.gain : t.net < 0 ? colors.loss : colors.text }]}>
+              {formatPoints(t.net)}
+            </Text>
+          </View>
+        );
+      })}
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
+  // Blue edge: immediate payouts, set apart from the gold-edged winning hands.
+  payoutCard: { borderLeftWidth: 4, borderLeftColor: colors.rare },
+  tableRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headCell: { flex: 1, color: colors.muted, fontSize: 13, fontWeight: '600', textAlign: 'right' },
+  cell: { flex: 1, color: colors.text, fontSize: 15, textAlign: 'right', fontVariant: ['tabular-nums'] },
+  nameCell: { flex: 2, textAlign: 'left' },
+  netCell: { fontWeight: '700' },
   form: { gap: 10, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.feltLine },
   label: { color: colors.muted, fontSize: 13, fontWeight: '600', paddingTop: 6 },
   list: { gap: 8 },

@@ -7,6 +7,8 @@ export type PatternGroup = 'bonus' | 'sets' | 'shape' | 'winning' | 'limit';
 export interface PatternDef {
   id: string;
   name: string;
+  /** For naming a winning hand in the history, e.g. "Own flower" for "Own flower or season". */
+  shortName?: string;
   chinese?: string;
   /** Tai (or faan, or han) per time the pattern is counted. Ignored for limit hands. */
   tai: number;

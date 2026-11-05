@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { recordPayout, undoPayout } from '../db';
 import { payoutTotals } from '../game/history';
 import { seatWindOf, WIND_NAMES } from '../game/winds';
 import { immediatePayments, ImmediatePayoutDef, rulesetFor } from '../scoring';
-import { colors, radius } from '../theme';
+import { colors, radius, themedStyles } from '../theme';
 import type { PayoutRecord, Session } from '../types';
 import { Button, Card, Chip, ErrorText, formatPoints, Muted, Row, SectionTitle } from '../ui';
 
@@ -13,6 +13,7 @@ import { Button, Card, Chip, ErrorText, formatPoints, Muted, Row, SectionTitle }
  * hand's payouts so far, which can still be undone. Earlier hands' are in PayoutTotalsCard.
  */
 export function PayoutsCard({ session, uid }: { session: Session; uid: string }) {
+  const styles = useStyles();
   const ruleset = rulesetFor(session.rulesetId, session.options);
   const others = session.players.length - 1;
   const defs = ruleset.immediatePayouts;
@@ -168,6 +169,7 @@ export function PayoutsCard({ session, uid }: { session: Session; uid: string })
 
 /** Every immediate payout in the game so far, added up per player. */
 export function PayoutTotalsCard({ session }: { session: Session }) {
+  const styles = useStyles();
   const payouts = session.payouts ?? [];
   if (payouts.length === 0) return null;
   const totals = payoutTotals(session.players, payouts);
@@ -190,9 +192,9 @@ export function PayoutTotalsCard({ session }: { session: Session }) {
             <Text style={[styles.cell, styles.nameCell]} numberOfLines={1}>
               {p.avatar} {p.name}
             </Text>
-            <Text style={[styles.cell, t.earned ? { color: colors.gain } : null]}>{t.earned ? `+${t.earned}` : '0'}</Text>
-            <Text style={[styles.cell, t.lost ? { color: colors.loss } : null]}>{t.lost ? `−${t.lost}` : '0'}</Text>
-            <Text style={[styles.cell, styles.netCell, { color: t.net > 0 ? colors.gain : t.net < 0 ? colors.loss : colors.text }]}>
+            <Text style={[styles.cell, t.earned ? { color: colors.success } : null]}>{t.earned ? `+${t.earned}` : '0'}</Text>
+            <Text style={[styles.cell, t.lost ? { color: colors.error } : null]}>{t.lost ? `−${t.lost}` : '0'}</Text>
+            <Text style={[styles.cell, styles.netCell, { color: t.net > 0 ? colors.success : t.net < 0 ? colors.error : colors.text }]}>
               {formatPoints(t.net)}
             </Text>
           </View>
@@ -202,25 +204,25 @@ export function PayoutTotalsCard({ session }: { session: Session }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   // Blue edge: immediate payouts, set apart from the gold-edged winning hands.
-  payoutCard: { borderLeftWidth: 4, borderLeftColor: colors.rare },
+  payoutCard: { borderLeftWidth: 4, borderLeftColor: colors.secondary },
   tableRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headCell: { flex: 1, color: colors.muted, fontSize: 13, fontWeight: '600', textAlign: 'right' },
+  headCell: { flex: 1, color: colors.textMuted, fontSize: 13, fontWeight: '600', textAlign: 'right' },
   cell: { flex: 1, color: colors.text, fontSize: 15, textAlign: 'right', fontVariant: ['tabular-nums'] },
   nameCell: { flex: 2, textAlign: 'left' },
   netCell: { fontWeight: '700' },
-  form: { gap: 10, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.feltLine },
-  label: { color: colors.muted, fontSize: 13, fontWeight: '600', paddingTop: 6 },
+  form: { gap: 10, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border },
+  label: { color: colors.textMuted, fontSize: 13, fontWeight: '600', paddingTop: 6 },
   list: { gap: 8 },
   item: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: colors.feltDeep,
+    backgroundColor: colors.surfaceDeep,
     borderRadius: radius.control,
     padding: 10,
   },
   itemText: { flex: 1, gap: 2 },
   itemTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
-});
+}));

@@ -1,14 +1,16 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { handName } from '../game/history';
 import { WIND_NAMES } from '../game/winds';
 import { limitName, Ruleset, unitOf } from '../scoring';
-import { colors, radius } from '../theme';
+import { colors, radius, themedStyles } from '../theme';
 import type { HandRecord } from '../types';
 import { formatPoints, Muted } from '../ui';
+import { HandView } from './TileArt';
 
 /** One hand in the history. Wins stand out with a gold edge and the hand's name. */
 export function HandCard({ hand: h, ruleset, nameOf }: { hand: HandRecord; ruleset: Ruleset; nameOf: (id: string | null) => string }) {
+  const styles = useStyles();
   const when = `Hand ${h.handNumber}, ${WIND_NAMES[h.prevailingWind]} round`;
   if (h.result !== 'win') {
     const text = h.riichi
@@ -32,14 +34,18 @@ export function HandCard({ hand: h, ruleset, nameOf }: { hand: HandRecord; rules
     <View style={[styles.hand, styles.win]}>
       <View style={styles.winHeader}>
         <Text style={styles.winTitle}>{title}</Text>
-        {h.riichi ? null : <Text style={styles.taiBadge}>
+        {h.riichi ? null : (
+          <Text style={styles.taiBadge}>
             {h.tai} {unitOf(ruleset)}
-          </Text>}
+          </Text>
+        )}
       </View>
       <Text style={styles.winDetail}>
         {h.riichi ? '' : `${nameOf(h.winnerId)} ${how}, `}
-        <Text style={{ color: colors.gain }}>{formatPoints(gain)}</Text>
+        <Text style={{ color: colors.success }}>{formatPoints(gain)}</Text>
       </Text>
+      {/* Hands recorded with the tile calculator keep their tiles. */}
+      {h.tiles?.length ? <HandView tiles={h.tiles} flowers={h.flowers ?? []} maxTileWidth={26} /> : null}
       <Text style={styles.handWhen}>{when}</Text>
     </View>
   );
@@ -62,20 +68,20 @@ function describeRiichi(h: HandRecord, nameOf: (id: string | null) => string): s
   return `${wins.join(' and ')} ${how}${r.winners.length > 1 ? ' (double ron)' : ''}.${riichis}`;
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   hand: {
-    backgroundColor: colors.feltDeep,
+    backgroundColor: colors.surfaceDeep,
     borderRadius: radius.control,
     padding: 12,
     gap: 2,
   },
-  handWhen: { color: colors.muted, fontSize: 13, fontWeight: '600' },
-  falseWin: { borderLeftWidth: 4, borderLeftColor: colors.loss },
+  handWhen: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  falseWin: { borderLeftWidth: 4, borderLeftColor: colors.error },
   // Gold edge: winning hands, set apart from the blue-edged immediate payouts.
   win: {
-    backgroundColor: colors.feltRaised,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.legendary,
+    borderColor: colors.accent,
     borderLeftWidth: 5,
     padding: 14,
     gap: 4,
@@ -83,8 +89,8 @@ const styles = StyleSheet.create({
   winHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   winTitle: { flex: 1, color: colors.text, fontSize: 17, fontWeight: '800', lineHeight: 23 },
   taiBadge: {
-    backgroundColor: colors.legendary,
-    color: colors.ink,
+    backgroundColor: colors.accent,
+    color: colors.onAccent,
     fontSize: 13,
     fontWeight: '800',
     paddingHorizontal: 10,
@@ -93,4 +99,4 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   winDetail: { color: colors.text, fontSize: 15, fontWeight: '600' },
-});
+}));

@@ -359,3 +359,148 @@ function heldTitles(uid: string, games: Game[], groups: Group[]): HeldTitle[] {
   }
   return held;
 }
+
+// ---------- Progress towards titles ----------
+
+/** How close a player is to something they haven't unlocked yet. */
+export interface Progress {
+  /** 0 to 1. */
+  fraction: number;
+  /** e.g. "7/10 games". */
+  text: string;
+}
+
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+/** "7/10 games", capped at the target. */
+export function countProgress(current: number, target: number, unit: string): Progress {
+  return { fraction: clamp01(current / target), text: `${Math.min(current, target)}/${target} ${unit}` };
+}
+
+/** Counts that other unlocks depend on, beyond titles (e.g. profile themes). */
+export interface PlayerCounts {
+  /** Games sat in with at least one hand played, as the Regular title counts them. */
+  gamesPlayed: number;
+  /** Finished games where this player ended outright top. */
+  gamesWon: number;
+  /** Winning hands that were limit hands. */
+  limitWins: number;
+}
+
+function myGames(uid: string, sessions: Session[], handsBySession: Record<string, HandRecord[]>) {
+  return chronological(sessions, handsBySession).flatMap((g) => {
+    const me = g.session.players.find((p) => p.uid === uid);
+    return me && g.hands.length > 0 ? [{ ...g, me: me.id, played: g.hands.filter(isPlayed) }] : [];
+  });
+}
+
+export function playerCounts(uid: string, sessions: Session[], handsBySession: Record<string, HandRecord[]>): PlayerCounts {
+  const mine = myGames(uid, sessions, handsBySession);
+  return {
+    gamesPlayed: mine.length,
+    gamesWon: mine.filter((g) => g.session.status === 'finished' && isFirst(g.session.scores, g.me)).length,
+    limitWins: mine.reduce((n, g) => n + g.played.filter((h) => wonBy(h, g.me) && hasLimitHand(h, g.ruleset)).length, 0),
+  };
+}
+
+/**
+ * Progress towards every title, from the games the player can see. Streaks count the best run so
+ * far. Titles with a minimum (20 wins, 100 hands) show that first, then the rate they need.
+ */
+export function titleProgress(
+  uid: string,
+  sessions: Session[],
+  handsBySession: Record<string, HandRecord[]>,
+  groups: Group[],
+): Record<string, Progress> {
+  const games = chronological(sessions, handsBySession);
+  const stats = computeStats(uid, sessions, handsBySession);
+  const mine = myGames(uid, sessions, handsBySession);
+  const myHands = mine.flatMap((g) => g.played.map((h) => ({ h, me: g.me, ruleset: g.ruleset })));
+  const myWins = myHands.filter((x) => wonBy(x.h, x.me));
+  const winsWith = (id: string) => myWins.filter((x) => hasPattern(x.h, id)).length;
+  const finished = mine.filter((g) => g.session.status === 'finished');
+  const full = mine.filter(isFullGame);
+  const once = (done: boolean, unit: string) => countProgress(done ? 1 : 0, 1, unit);
+  const percentOf = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
+
+  // Group titles need 50 hands in one group, then the best (or worst) record there.
+  const groupHands = (groupId: string) =>
+    games
+      .filter((g) => g.session.groupId === groupId && g.session.players.some((p) => p.uid === uid))
+      .reduce((n, g) => n + g.hands.filter(isPlayed).length, 0);
+  const bestGroupHands = Math.max(0, ...groups.map((g) => groupHands(g.id)));
+  const groupTitle = (goal: string): Progress =>
+    bestGroupHands < 50
+      ? countProgress(bestGroupHands, 50, 'hands in one group')
+      : { fraction: 0.9, text: `50/50 hands. Now ${goal} in the group` };
+
+  const taiWins = myWins.filter((x) => x.ruleset.scoringModel === 'tai');
+  const dealInsLast100 = myHands.slice(-100).filter((x) => x.h.discarderId === x.me).length;
+  const rate = (pct: number, needed: number, what: string): Progress => ({
+    fraction: clamp01(pct / needed),
+    text: `${pct}% ${what} (${needed}% needed)`,
+  });
+
+  const progress: Record<string, () => Progress> = {
+    mahjongs_favourite: () => groupTitle('have the best win rate'),
+    wall_whisperer: () =>
+      stats.wins < 20 ? countProgress(stats.wins, 20, 'wins') : rate(percentOf(stats.selfDraws, stats.wins), 40, 'of wins self-drawn'),
+    limit_breaker: () => countProgress(myWins.filter((x) => hasLimitHand(x.h, x.ruleset)).length, 1, 'limit hand'),
+    thirteen_orphans_club: () => countProgress(winsWith('thirteen_orphans'), 1, 'thirteen orphans'),
+    heaven_sent: () => countProgress(winsWith('heavenly_hand'), 1, 'heavenly hand'),
+    moon_fisher: () => countProgress(winsWith('last_tile'), 3, 'last-tile wins'),
+    kong_bloom: () => countProgress(winsWith('kong_replacement'), 3, 'kong replacement wins'),
+    kong_thief: () => countProgress(winsWith('robbing_kong'), 1, 'robbed kong'),
+    dealer_dynasty: () =>
+      countProgress(
+        Math.max(0, ...mine.map((g) => longestRun(g.played.map((h) => h.dealerId === g.me && keptDeal(h, g.me, g.ruleset.rotation))))),
+        5,
+        'deals kept in a row',
+      ),
+    pure_blood: () => countProgress(winsWith('full_flush'), 5, 'full flush wins'),
+    great_wall: () =>
+      myHands.length < 100
+        ? countProgress(myHands.length, 100, 'hands')
+        : {
+            fraction: dealInsLast100 < 8 ? 1 : clamp01(7 / dealInsLast100),
+            text: `${dealInsLast100} deal-ins in your last 100 hands (under 8 needed)`,
+          },
+    wire_to_wire: () => once(full.some((g) => runningScores(g).every((s) => isOutright(s, g.me, (a, b) => a > b))), 'game led wire to wire'),
+    comeback_kid: () =>
+      once(
+        finished.some((g) => {
+          const scores = runningScores(g);
+          const endOfEast = g.hands.map((h) => h.prevailingWind).lastIndexOf(0);
+          if (endOfEast < 0 || endOfEast === g.hands.length - 1) return false;
+          return isLast(scores[endOfEast], g.me) && isFirst(scores[scores.length - 1], g.me);
+        }),
+        'comeback',
+      ),
+    one_tai_merchant: () =>
+      taiWins.length < 20
+        ? countProgress(taiWins.length, 20, 'wins')
+        : rate(percentOf(taiWins.filter((x) => x.h.tai === 1).length, taiWins.length), 70, 'of wins at 1 tai'),
+    za_hu: () => countProgress(mine.flatMap((g) => g.hands.filter((h) => h.result === 'falseWin' && h.offenderId === g.me)).length, 3, 'false wins'),
+    generous_donor: () => groupTitle('have the highest deal-in rate'),
+    feeding_frenzy: () => countProgress(longestRun(myHands.map((x) => x.h.discarderId === x.me)), 3, 'deal-ins in a row'),
+    ghost_of_the_table: () => once(full.some((g) => !g.hands.some((h) => wonBy(h, g.me))), 'winless full game'),
+    eternal_bridesmaid: () => countProgress(longestRun(finished.map((g) => placeOf(g.session.scores, g.me) === 2)), 5, 'second places in a row'),
+    limit_victim: () => countProgress(myHands.filter((x) => x.h.discarderId === x.me && hasLimitHand(x.h, x.ruleset)).length, 1, 'limit hand dealt into'),
+    one_and_done: () =>
+      countProgress(
+        mine.filter((g) => {
+          const first = g.played.find((h) => h.dealerId === g.me);
+          return !!first && !keptDeal(first, g.me, g.ruleset.rotation);
+        }).length,
+        10,
+        'first deals lost',
+      ),
+    big_hand_dreamer: () => countProgress(longestRun(myHands.map((x) => !wonBy(x.h, x.me) && x.h.discarderId !== x.me)), 10, 'quiet hands in a row'),
+    first_blood: () => countProgress(stats.wins, 1, 'win'),
+    regular: () => countProgress(mine.length, 10, 'games'),
+    centurion: () => countProgress(stats.handsPlayed, 100, 'hands'),
+    tile_veteran: () => countProgress(stats.handsPlayed, 1000, 'hands'),
+    founding_member: () => ({ fraction: 0, text: 'Only the admin can give this' }),
+  };
+  return Object.fromEntries(TITLES.map((t) => [t.id, progress[t.id]?.() ?? { fraction: 0, text: '' }]));
+}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { usePreferredRuleset } from '../preferences';
 import {
   clashesWith,
@@ -13,7 +13,7 @@ import {
   RULESETS,
   unitOf,
 } from '../scoring';
-import { colors, radius } from '../theme';
+import { radius, themedStyles } from '../theme';
 import { Chip, Field, Muted, Row, SectionTitle, Title } from '../ui';
 import { TabPage } from './TabPage';
 
@@ -22,6 +22,7 @@ const GROUP_ORDER: PatternGroup[] = ['bonus', 'sets', 'shape', 'winning', 'limit
 const HAN_FU_GROUP_ORDER: PatternGroup[] = ['winning', 'sets', 'shape', 'bonus', 'limit'];
 
 export function RulesPage() {
+  const styles = useStyles();
   const [rulesetId, setRulesetId] = usePreferredRuleset();
   const [search, setSearch] = useState('');
   const ruleset = getRuleset(rulesetId);
@@ -147,6 +148,7 @@ function patternValue(ruleset: Ruleset, p: PatternDef): string {
 }
 
 function PatternEntry({ ruleset, pattern: p }: { ruleset: Ruleset; pattern: PatternDef }) {
+  const styles = useStyles();
   const [open, setOpen] = useState(false);
   const clashes = clashesWith(ruleset, p.id);
   const value = patternValue(ruleset, p);
@@ -196,21 +198,21 @@ function PatternEntry({ ruleset, pattern: p }: { ruleset: Ruleset; pattern: Patt
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   group: { gap: 10 },
   entry: {
-    backgroundColor: colors.feltRaised,
+    backgroundColor: colors.surface,
     borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: colors.feltLine,
+    borderColor: colors.border,
     padding: 14,
     gap: 6,
   },
   entryHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
   entryName: { color: colors.text, fontSize: 16, fontWeight: '700', flexShrink: 1 },
   badge: {
-    color: colors.ink,
-    backgroundColor: colors.ivory,
+    color: colors.onHighlight,
+    backgroundColor: colors.highlight,
     borderRadius: radius.pill,
     paddingHorizontal: 10,
     paddingVertical: 3,
@@ -218,8 +220,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     overflow: 'hidden',
   },
-  badgeLimit: { backgroundColor: colors.lacquer, color: colors.ivory },
-  details: { gap: 6, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.feltLine },
+  badgeLimit: { backgroundColor: colors.primary, color: colors.onPrimary },
+  details: { gap: 6, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border },
   detailText: { color: colors.text, fontSize: 14, lineHeight: 20 },
   more: { fontSize: 13 },
-});
+}));

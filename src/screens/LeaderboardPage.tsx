@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { displayNameOf, Protected, useAuth, useSignedInUser } from '../auth';
 import { TitleBadge } from '../components/TitleCard';
 import { subscribeLeaderboard } from '../db';
+import { useResultTotals, withResultStats } from '../stats';
 import { LEADERBOARD_SORTS, LeaderboardSort, rankPlayers } from '../game/leaderboard';
 import { shownTitles } from '../game/titles';
-import { colors, radius } from '../theme';
+import { colors, radius, themedStyles } from '../theme';
 import type { UserProfile } from '../types';
 import { Button, Card, Chip, ErrorText, formatPoints, Loading, Muted, Row, SectionTitle, Title } from '../ui';
 import { TabPage } from './TabPage';
@@ -37,6 +38,7 @@ export function LeaderboardPage() {
 }
 
 function LeaderboardContent() {
+  const styles = useStyles();
   const user = useSignedInUser();
   const { isGuest } = useAuth();
   const [sort, setSort] = useState<LeaderboardSort>('winRate');
@@ -45,13 +47,15 @@ function LeaderboardContent() {
 
   useEffect(() => subscribeLeaderboard(setPlayers, (e) => setError(e.message)), []);
 
-  const { ranked, notRanked } = players ? rankPlayers(players, sort) : { ranked: [], notRanked: 0 };
+  // Stats come from each finished game, so the board moves the moment a game ends.
+  const { totals, error: resultsError } = useResultTotals();
+  const { ranked, notRanked } = players ? rankPlayers(players.map((p) => withResultStats(p, totals)), sort) : { ranked: [], notRanked: 0 };
   const def = LEADERBOARD_SORTS[sort];
 
   return (
     <TabPage>
       <Title>Leaderboard</Title>
-      <Muted>Everyone with an account, ranked on career stats. Each player’s stats update when they next open TileTalk.</Muted>
+      <Muted>Everyone with an account, ranked on career stats. It updates at the end of every game.</Muted>
 
       <Row>
         {SORT_ORDER.map((id) => (
@@ -67,7 +71,7 @@ function LeaderboardContent() {
         </Card>
       ) : null}
 
-      <ErrorText message={error} />
+      <ErrorText message={error ?? resultsError} />
 
       {players === null ? (
         <Loading />
@@ -94,7 +98,7 @@ function LeaderboardContent() {
                     {displayNameOf(r.profile)}
                     {me ? ' (you)' : ''}
                   </Text>
-                  {topTitle ? <TitleBadge def={topTitle.def} color={me ? colors.ink : undefined} /> : null}
+                  {topTitle ? <TitleBadge def={topTitle.def} color={me ? colors.onHighlight : undefined} /> : null}
                   <Muted style={me ? styles.mutedMe : undefined}>
                     {r.stats.handsPlayed} hands, {r.stats.wins} wins
                   </Muted>
@@ -115,26 +119,26 @@ function LeaderboardContent() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   list: { gap: 8 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: colors.feltRaised,
+    backgroundColor: colors.surface,
     borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: colors.feltLine,
+    borderColor: colors.border,
     paddingVertical: 10,
     paddingHorizontal: 14,
   },
-  rowMe: { backgroundColor: colors.ivory, borderColor: colors.ivory },
-  rank: { color: colors.muted, fontSize: 16, fontWeight: '700', minWidth: 24, textAlign: 'center' },
-  rankTop: { color: colors.ivory, fontSize: 18 },
+  rowMe: { backgroundColor: colors.highlight, borderColor: colors.highlight },
+  rank: { color: colors.textMuted, fontSize: 16, fontWeight: '700', minWidth: 24, textAlign: 'center' },
+  rankTop: { color: colors.highlight, fontSize: 18 },
   avatar: { fontSize: 24 },
   who: { flex: 1, gap: 2 },
   name: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  nameMe: { color: colors.ink },
-  mutedMe: { color: colors.ink, opacity: 0.7 },
+  nameMe: { color: colors.onHighlight },
+  mutedMe: { color: colors.onHighlight, opacity: 0.7 },
   value: { color: colors.text, fontSize: 18, fontWeight: '700' },
-});
+}));

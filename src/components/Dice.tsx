@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Text, View } from 'react-native';
 import { WIND_NAMES, wallBreak } from '../game/winds';
-import { colors, radius } from '../theme';
+import { colors, radius, themedStyles } from '../theme';
 import { Button, Card, Chip, Row, SectionTitle } from '../ui';
 
 // Pip positions on a 3x3 grid as [row, column].
@@ -17,8 +17,9 @@ const PIPS: Record<number, [number, number][]> = {
 const randomFace = () => 1 + Math.floor(Math.random() * 6);
 
 function Die({ value }: { value: number }) {
+  const styles = useStyles();
   // Chinese dice traditionally have red pips on the 1 and 4 faces.
-  const pipColor = value === 1 || value === 4 ? colors.lacquer : colors.ink;
+  const pipColor = value === 1 || value === 4 ? colors.tileRed : colors.tileInk;
   const pipSize = value === 1 ? 14 : 10;
   return (
     <View style={styles.die} accessible accessibilityLabel={`Die showing ${value}`}>
@@ -43,6 +44,7 @@ function Die({ value }: { value: number }) {
 }
 
 export function DiceRoller({ dealerIndex, playerNames }: { dealerIndex: number; playerNames: string[] }) {
+  const styles = useStyles();
   const [count, setCount] = useState<2 | 3>(2);
   const [values, setValues] = useState<number[] | null>(null);
   const [rolling, setRolling] = useState(false);
@@ -112,18 +114,18 @@ export function DiceRoller({ dealerIndex, playerNames }: { dealerIndex: number; 
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   diceRow: { gap: 12, paddingVertical: 4 },
   die: {
     width: 56,
     height: 56,
     borderRadius: radius.control,
-    backgroundColor: colors.ivory,
+    backgroundColor: colors.tileFace,
     borderBottomWidth: 4,
-    borderBottomColor: colors.ivoryEdge,
+    borderBottomColor: colors.tileEdge,
     position: 'relative',
   },
   dieEmpty: { opacity: 0.25 },
   pip: { position: 'absolute' },
   result: { color: colors.text, fontSize: 16, lineHeight: 22 },
-});
+}));

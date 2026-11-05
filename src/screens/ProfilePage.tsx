@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { displayNameOf, Protected, useAuth, useSignedInUser } from '../auth';
 import { StatsGrid } from '../components/StatsGrid';
@@ -7,7 +7,8 @@ import { TitleCard } from '../components/TitleCard';
 import { updateProfile } from '../db';
 import { ownedTitles, shownTitles, TITLES } from '../game/titles';
 import { usePlayerRecord, usePublishRecord } from '../stats';
-import { colors } from '../theme';
+import { findAppTheme, radius, themedStyles, useAppTheme } from '../theme';
+import { findProfileTheme } from '../game/profileThemes';
 import { Button, Card, ErrorText, Field, Loading, Muted, SectionTitle, Title } from '../ui';
 import { TabPage } from './TabPage';
 
@@ -20,6 +21,7 @@ export function ProfilePage() {
 }
 
 function ProfileContent() {
+  const styles = useStyles();
   const user = useSignedInUser();
   const { profile, isGuest, signOut } = useAuth();
   const [name, setName] = useState('');
@@ -27,6 +29,7 @@ function ProfileContent() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmLogOut, setConfirmLogOut] = useState(false);
+  const appTheme = useAppTheme();
   const { record, error: recordError } = usePlayerRecord(user.uid);
   // This page is always mounted under the tab bar, so it keeps the public copy up to date.
   usePublishRecord(profile, record, !isGuest);
@@ -69,6 +72,23 @@ function ProfileContent() {
           <Title>{displayNameOf(profile)}</Title>
           {isGuest ? <Muted>Guest</Muted> : <Muted>{user.email}</Muted>}
         </View>
+      </View>
+
+      <View style={styles.custom}>
+        <SettingRow
+          icon="🎨"
+          title="App theme"
+          value={findAppTheme(appTheme.id).name}
+          hint="How TileTalk looks on this device"
+          onPress={() => router.push('/profile/appearance')}
+        />
+        <SettingRow
+          icon="🪪"
+          title="Profile customisation"
+          value={findProfileTheme(profile.profileTheme).name}
+          hint="The design everyone sees on your profile"
+          onPress={() => router.push('/profile/customise')}
+        />
       </View>
 
       {isGuest ? (
@@ -141,20 +161,61 @@ function ProfileContent() {
   );
 }
 
-const styles = StyleSheet.create({
+/** A row that opens a settings screen, showing what's chosen now. */
+function SettingRow({ icon, title, value, hint, onPress }: { icon: string; title: string; value: string; hint: string; onPress: () => void }) {
+  const styles = useStyles();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}: ${value}`}
+      accessibilityHint={hint}
+      onPress={onPress}
+      style={({ pressed }) => [styles.setting, pressed && { opacity: 0.8 }]}
+    >
+      <Text style={styles.settingIcon}>{icon}</Text>
+      <View style={styles.settingText}>
+        <Text style={styles.settingTitle}>{title}</Text>
+        <Text style={styles.settingHint}>{hint}</Text>
+      </View>
+      <Text style={styles.settingValue} numberOfLines={1}>
+        {value} ›
+      </Text>
+    </Pressable>
+  );
+}
+
+const useStyles = themedStyles((colors) => ({
+  custom: { gap: 10 },
+  setting: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 60,
+  },
+  settingIcon: { fontSize: 24 },
+  settingText: { flex: 1, gap: 1 },
+  settingTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  settingHint: { color: colors.textMuted, fontSize: 13 },
+  settingValue: { color: colors.highlight, fontSize: 14, fontWeight: '700', maxWidth: 130 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   headerText: { flex: 1, gap: 2 },
   avatarButton: {
     width: 84,
     height: 84,
     borderRadius: 42,
-    backgroundColor: colors.feltRaised,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.feltLine,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatar: { fontSize: 44, lineHeight: 52 },
-  avatarHint: { color: colors.muted, fontSize: 11, fontWeight: '700' },
+  avatarHint: { color: colors.textMuted, fontSize: 11, fontWeight: '700' },
   list: { gap: 10 },
-});
+}));

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import { Link, router } from 'expo-router';
 import { displayNameOf, Protected, useAuth, useSignedInUser } from '../auth';
 import { SessionRow } from '../components/SessionRow';
@@ -12,7 +12,7 @@ import {
   subscribeMySessions,
   updateProfile,
 } from '../db';
-import { colors, radius } from '../theme';
+import { radius, themedStyles } from '../theme';
 import type { Group, Session } from '../types';
 import { Button, Card, ErrorText, Field, Loading, Muted, SectionTitle, Title } from '../ui';
 import { TabPage } from './TabPage';
@@ -28,6 +28,7 @@ export function GamesPage() {
 }
 
 function GamesContent() {
+  const styles = useStyles();
   const user = useSignedInUser();
   const { profile } = useAuth();
   const [groups, setGroups] = useState<Group[] | null>(null);
@@ -158,6 +159,7 @@ function GamesContent() {
 
 /** Admins only: every group, including ones they're not in, so they can open and delete them. */
 function AdminGroups() {
+  const styles = useStyles();
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => subscribeAllGroups(setGroups, (e) => setError(e.message)), []);
@@ -212,12 +214,12 @@ function NameCard({ uid }: { uid: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   groupRow: {
-    backgroundColor: colors.feltRaised,
+    backgroundColor: colors.surface,
     borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: colors.feltLine,
+    borderColor: colors.border,
     padding: 16,
     gap: 4,
   },
@@ -229,7 +231,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: radius.control,
-    backgroundColor: colors.feltDeep,
+    backgroundColor: colors.surfaceDeep,
   },
   adminName: { color: colors.text, fontSize: 15, fontWeight: '600', flexShrink: 1 },
-});
+}));

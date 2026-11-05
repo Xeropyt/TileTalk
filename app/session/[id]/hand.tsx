@@ -1,5 +1,5 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Protected, useSignedInUser } from '../../../src/auth';
 import { RiichiHandForm } from '../../../src/components/RiichiHandForm';
@@ -29,7 +29,7 @@ import {
   TileReading,
   WinType,
 } from '../../../src/scoring';
-import { colors, radius } from '../../../src/theme';
+import { colors, radius, themedStyles } from '../../../src/theme';
 import type { HandResult, Player, Session } from '../../../src/types';
 import { Button, Card, Chip, ErrorText, formatPoints, Loading, Muted, Row, Screen, SectionTitle, Stepper } from '../../../src/ui';
 
@@ -43,7 +43,11 @@ export default function RecordHandPage() {
 
 const GROUP_ORDER: PatternGroup[] = ['bonus', 'sets', 'shape', 'winning', 'limit'];
 
+// Tiles laid out but not saved yet, per game, so stepping away from this screen doesn't lose them.
+const tileDrafts = new Map<string, { tiles: string[]; flowers: string[] }>();
+
 function RecordHandScreen() {
+  const styles = useStyles();
   const { id, mode } = useLocalSearchParams<{ id: string; mode?: string }>();
   const user = useSignedInUser();
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -55,8 +59,12 @@ function RecordHandScreen() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   // The tile calculator: lay out the winning tiles and the patterns they show fill themselves in.
   const [byTiles, setByTiles] = useState(mode === 'tiles');
-  const [tiles, setTiles] = useState<string[]>([]);
-  const [flowers, setFlowers] = useState<string[]>([]);
+  const [tiles, setTiles] = useState<string[]>(() => tileDrafts.get(id)?.tiles ?? []);
+  const [flowers, setFlowers] = useState<string[]>(() => tileDrafts.get(id)?.flowers ?? []);
+  useEffect(() => {
+    if (tiles.length || flowers.length) tileDrafts.set(id, { tiles, flowers });
+    else tileDrafts.delete(id);
+  }, [id, tiles, flowers]);
   // Hong Kong: whether any set was melded (claimed from a discard), which the tiles can't show.
   const [melded, setMelded] = useState(true);
   // Tapping a tile redraws the tiles straight away; reading them and redrawing the patterns
@@ -170,7 +178,7 @@ function RecordHandScreen() {
           </Card>
         );
       }),
-    [ruleset, counts, claimed, context, tileMode, unit],
+    [ruleset, counts, claimed, context, tileMode, unit, styles],
   );
 
   if (session === undefined) return <Loading />;
@@ -223,6 +231,7 @@ function RecordHandScreen() {
               },
         user.uid,
       );
+      tileDrafts.delete(id);
       router.back();
     } catch (e) {
       setError((e as Error).message);
@@ -310,7 +319,8 @@ function RecordHandScreen() {
           ) : null}
 
           {tileMode ? (
-            <Card>
+            // Not in a card, so the tiles can be bigger and easier to tap.
+            <View style={styles.tileSection}>
               <SectionTitle>Winning tiles</SectionTitle>
               <TilePicker
                 tiles={tiles}
@@ -339,7 +349,7 @@ function RecordHandScreen() {
                   <Muted>{reading.reason}</Muted>
                 ) : null}
               </View>
-            </Card>
+            </View>
           ) : null}
 
           {tileMode ? <SectionTitle>Anything the tiles can’t show?</SectionTitle> : null}
@@ -370,12 +380,13 @@ function RecordHandScreen() {
 }
 
 function PaymentList({ players, payments }: { players: Player[]; payments: Record<string, number> }) {
+  const styles = useStyles();
   return (
     <>
       {players.map((p) => (
         <View key={p.id} style={styles.payment}>
           <Text style={styles.paymentName}>{p.name}</Text>
-          <Text style={[styles.paymentValue, { color: payments[p.id] > 0 ? colors.gain : payments[p.id] < 0 ? colors.loss : colors.text }]}>
+          <Text style={[styles.paymentValue, { color: payments[p.id] > 0 ? colors.success : payments[p.id] < 0 ? colors.error : colors.text }]}>
             {formatPoints(payments[p.id])}
           </Text>
         </View>
@@ -384,16 +395,17 @@ function PaymentList({ players, payments }: { players: Player[]; payments: Recor
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   pattern: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
   patternText: { flex: 1, gap: 2 },
   patternName: { color: colors.text, fontSize: 15, fontWeight: '600' },
-  summary: { backgroundColor: colors.feltDeep, borderRadius: radius.card },
-  summaryTai: { color: colors.ivory, fontSize: 24, fontWeight: '700' },
-  reading: { gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.feltLine },
-  readingLabel: { color: colors.muted, fontSize: 13, fontWeight: '600' },
+  summary: { backgroundColor: colors.surfaceDeep, borderRadius: radius.card },
+  summaryTai: { color: colors.highlight, fontSize: 24, fontWeight: '700' },
+  tileSection: { gap: 12 },
+  reading: { gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border },
+  readingLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
   readingName: { color: colors.text, fontSize: 17, fontWeight: '800' },
   payment: { flexDirection: 'row', justifyContent: 'space-between' },
   paymentName: { color: colors.text, fontSize: 16 },
   paymentValue: { fontSize: 16, fontWeight: '700' },
-});
+}));

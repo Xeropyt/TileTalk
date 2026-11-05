@@ -1,7 +1,7 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
 import { BONUS_TILES, HAND_TILES, MAX_HAND_TILES, maxCopies, MIN_HAND_TILES, sortTiles, tileName } from '../game/tiles';
-import { colors, radius } from '../theme';
+import { radius, themedStyles } from '../theme';
 import { Button, Muted, Row } from '../ui';
 import { TileImage } from './TileArt';
 
@@ -12,7 +12,11 @@ const PICKER_GROUPS: { name: string; tiles: string[] }[] = [
   { name: 'Winds and dragons', tiles: HAND_TILES.slice(27) },
   { name: 'Flowers and seasons', tiles: BONUS_TILES },
 ];
-const PICKER_TILE = 34;
+// Picker tiles fill the width, nine to a row (one suit), with small gaps so they're easy to hit
+// on a phone. Capped so they don't get huge on tablets and computers.
+const PICKER_GAP = 3;
+const PICKER_TILE_MIN = 30;
+const PICKER_TILE_MAX = 46;
 const LAID_TILE = 30;
 
 /**
@@ -30,7 +34,12 @@ export function TilePicker({
   onChange: (tiles: string[], flowers: string[]) => void;
   onError?: (message: string | null) => void;
 }) {
+  const styles = useStyles();
   const used = (code: string) => [...tiles, ...flowers].filter((t) => t === code).length;
+  const [gridWidth, setGridWidth] = useState(0);
+  const pickerTile = gridWidth
+    ? Math.max(PICKER_TILE_MIN, Math.min(PICKER_TILE_MAX, Math.floor((gridWidth - PICKER_GAP * 8) / 9)))
+    : PICKER_TILE_MIN;
 
   const add = (code: string) => {
     onError?.(null);
@@ -79,34 +88,36 @@ export function TilePicker({
         <Button title="Clear" variant="secondary" onPress={() => onChange([], [])} disabled={tiles.length + flowers.length === 0} />
       </Row>
 
-      {PICKER_GROUPS.map((g) => (
-        <View key={g.name} style={styles.group}>
-          <Text style={styles.groupName}>{g.name}</Text>
-          <View style={styles.picker}>
-            {g.tiles.map((t) => {
-              const left = maxCopies(t) - used(t);
-              return (
-                <Pressable
-                  key={t}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Add ${tileName(t)}`}
-                  accessibilityState={{ disabled: left === 0 }}
-                  disabled={left === 0}
-                  onPress={() => add(t)}
-                  style={({ pressed }) => pressed && { opacity: 0.7 }}
-                >
-                  <TileImage code={t} width={PICKER_TILE} dim={left === 0} />
-                </Pressable>
-              );
-            })}
+      <View style={styles.grid} onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}>
+        {PICKER_GROUPS.map((g) => (
+          <View key={g.name} style={styles.group}>
+            <Text style={styles.groupName}>{g.name}</Text>
+            <View style={styles.picker}>
+              {g.tiles.map((t) => {
+                const left = maxCopies(t) - used(t);
+                return (
+                  <Pressable
+                    key={t}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add ${tileName(t)}`}
+                    accessibilityState={{ disabled: left === 0 }}
+                    disabled={left === 0}
+                    onPress={() => add(t)}
+                    style={({ pressed }) => pressed && { opacity: 0.7 }}
+                  >
+                    <TileImage code={t} width={pickerTile} dim={left === 0} />
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
-        </View>
-      ))}
+        ))}
+      </View>
     </>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   laid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -115,10 +126,12 @@ const styles = StyleSheet.create({
     minHeight: 48,
     padding: 8,
     borderRadius: radius.control,
-    backgroundColor: colors.feltDeep,
+    backgroundColor: colors.surfaceDeep,
   },
-  flowerLabel: { color: colors.muted, fontSize: 12, fontWeight: '600', marginRight: 6 },
+  flowerLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '600', marginRight: 6 },
+  // Reaches a little past the page's margins, for bigger tiles.
+  grid: { marginHorizontal: -8, gap: 12 },
   group: { gap: 6 },
-  groupName: { color: colors.muted, fontSize: 13, fontWeight: '600' },
-  picker: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-});
+  groupName: { color: colors.textMuted, fontSize: 13, fontWeight: '600', marginHorizontal: 8 },
+  picker: { flexDirection: 'row', flexWrap: 'wrap', gap: PICKER_GAP },
+}));

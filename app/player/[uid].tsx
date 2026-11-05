@@ -6,7 +6,11 @@ import { StatsGrid } from '../../src/components/StatsGrid';
 import { TitleCard } from '../../src/components/TitleCard';
 import { setGrantedTitle, subscribeIsAdmin, subscribeProfile } from '../../src/db';
 import { shownTitles, TITLES } from '../../src/game/titles';
-import { normaliseStats, UserProfile } from '../../src/types';
+import { UserProfile } from '../../src/types';
+import { ProfileHeader } from '../../src/components/ProfileHeader';
+import { findProfileTheme, profileThemeStatus, shownProfileTheme } from '../../src/game/profileThemes';
+import { useUnlocks } from '../../src/stats';
+import { useResultTotals, withResultStats } from '../../src/stats';
 import { Button, Card, ErrorText, Loading, Muted, Screen, SectionTitle, Title } from '../../src/ui';
 
 /** What anyone can see about a player: their avatar, chosen titles and career stats. */
@@ -27,6 +31,9 @@ function PlayerScreen() {
 
   useEffect(() => subscribeProfile(uid, setProfile, (e) => { setError(e.message); setProfile(null); }), [uid]);
   useEffect(() => subscribeIsAdmin(me.uid, setIsAdmin), [me.uid]);
+  const { totals } = useResultTotals(uid);
+  // Your own unlocks can be checked (visitors can't see your games), so a design you've lost falls back.
+  const own = useUnlocks(me.uid);
 
   if (profile === undefined) return <Loading />;
   if (profile === null) return <Screen><Muted>This player doesn’t exist.</Muted><ErrorText message={error} /></Screen>;
@@ -37,11 +44,17 @@ function PlayerScreen() {
   return (
     <Screen>
       <Stack.Screen options={{ title: displayNameOf(profile) }} />
-      <View style={styles.header}>
-        <Text style={styles.avatar}>{profile.avatar}</Text>
-        <Title>{displayNameOf(profile)}</Title>
-        {profile.registered ? null : <Muted>Playing as a guest</Muted>}
-      </View>
+      <ProfileHeader
+        theme={
+          isMe && own.counts
+            ? shownProfileTheme(profile.profileTheme, profileThemeStatus(findProfileTheme(profile.profileTheme), own.counts, own.isAdmin))
+            : shownProfileTheme(profile.profileTheme)
+        }
+        avatar={profile.avatar}
+        name={displayNameOf(profile)}
+        subtitle={profile.registered ? titles[0]?.def.name : 'Playing as a guest'}
+      />
+      {isMe ? <Button title="Change design" variant="secondary" onPress={() => router.push('/profile/customise')} /> : null}
 
       <SectionTitle>Titles</SectionTitle>
       {titles.length === 0 ? (
@@ -56,7 +69,7 @@ function PlayerScreen() {
       {isMe ? <Button title="Choose titles" variant="secondary" onPress={() => router.push('/profile/titles')} /> : null}
 
       <SectionTitle>Career stats</SectionTitle>
-      <StatsGrid stats={normaliseStats(profile.stats)} />
+      <StatsGrid stats={withResultStats(profile, totals).stats!} />
 
       {isAdmin ? <AdminTitles profile={profile} /> : null}
     </Screen>

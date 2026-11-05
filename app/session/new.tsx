@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Protected, useSignedInUser } from '../../src/auth';
 import { SeatPicker } from '../../src/components/SeatPicker';
 import { createSession, subscribeGroup } from '../../src/db';
 import { usePreferredRuleset } from '../../src/preferences';
 import { defaultOptions, GameOptions, getRuleset, PaymentRules, RiichiOptions, RULESETS, taiToPayout, unitOf } from '../../src/scoring';
-import { colors } from '../../src/theme';
+import { themedStyles } from '../../src/theme';
 import type { Group, Player } from '../../src/types';
 import { Button, Card, Chip, ErrorText, Field, Loading, Muted, Row, Screen, SectionTitle } from '../../src/ui';
 
@@ -19,6 +19,7 @@ export default function NewSession() {
 }
 
 function NewSessionScreen() {
+  const styles = useStyles();
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const user = useSignedInUser();
   const [group, setGroup] = useState<Group | null | undefined>(undefined);
@@ -192,6 +193,7 @@ function HouseSettings({
   unit: string;
   onChange: (o: Partial<GameOptions>) => void;
 }) {
+  const styles = useStyles();
   return (
     <>
       <Text style={styles.label}>Min {unit} to win</Text>
@@ -246,6 +248,7 @@ function RiichiSettings({
   players: 3 | 4;
   onChange: (r: Partial<RiichiOptions>) => void;
 }) {
+  const styles = useStyles();
   const choice = (label: string, on: boolean, set: (v: boolean) => void, onText: string, offText: string) => (
     <>
       <Text style={styles.label}>{label}</Text>
@@ -279,7 +282,7 @@ function RiichiSettings({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   seats: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  label: { color: colors.muted, fontSize: 13, fontWeight: '600' },
-});
+  label: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+}));

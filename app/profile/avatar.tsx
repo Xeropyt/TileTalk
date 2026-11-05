@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { AVATAR_GROUPS } from '../../src/avatars';
 import { displayNameOf, Protected, useAuth, useSignedInUser } from '../../src/auth';
 import { updateProfile } from '../../src/db';
-import { colors, radius } from '../../src/theme';
+import { radius, themedStyles } from '../../src/theme';
 import { ErrorText, Loading, Muted, Screen, SectionTitle } from '../../src/ui';
 
 export default function AvatarPage() {
@@ -15,6 +15,7 @@ export default function AvatarPage() {
 }
 
 function AvatarScreen() {
+  const styles = useStyles();
   const user = useSignedInUser();
   const { profile } = useAuth();
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +61,7 @@ function AvatarScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   current: { alignItems: 'center', gap: 6, paddingVertical: 8 },
   currentAvatar: { fontSize: 72, lineHeight: 88 },
   group: { gap: 10 },
@@ -72,9 +73,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.feltLine,
-    backgroundColor: colors.feltRaised,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  avatarSelected: { backgroundColor: colors.ivory, borderColor: colors.ivory },
+  avatarSelected: { backgroundColor: colors.highlight, borderColor: colors.highlight },
   avatarText: { fontSize: 28 },
-});
+}));

@@ -14,12 +14,14 @@ import {
 import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../src/auth';
+import { Badge } from '../src/components/Sheet';
+import { useInbox } from '../src/inbox';
 import { GamesPage } from '../src/screens/GamesPage';
 import { HubPage } from '../src/screens/HubPage';
 import { LeaderboardPage } from '../src/screens/LeaderboardPage';
 import { ProfilePage } from '../src/screens/ProfilePage';
 import { RulesPage } from '../src/screens/RulesPage';
-import { colors } from '../src/theme';
+import { colors, themedStyles } from '../src/theme';
 import { Tile } from '../src/ui';
 
 type TabId = 'games' | 'rules' | 'hub' | 'leaderboard' | 'profile';
@@ -34,12 +36,16 @@ const TABS: { id: TabId; label: string; page: () => ReactNode }[] = [
 
 /**
  * The main pages sit side by side in one horizontal pager. Swipe between them, or tap
- * the bar at the bottom to scroll to one. Link to a page with /?tab=rules, /?tab=hub,
- * /?tab=leaderboard or /?tab=profile.
+ * the bar at the bottom to scroll to one. Link to a page with /?tab=games, /?tab=rules,
+ * /?tab=hub, /?tab=leaderboard or /?tab=profile. With no tab, the app opens on the Hub.
  */
+const DEFAULT_TAB: TabId = 'hub';
+
 export default function Home() {
+  const styles = useStyles();
   const { tab } = useLocalSearchParams<{ tab?: string }>();
-  const requested = Math.max(0, TABS.findIndex((t) => t.id === tab));
+  const find = (id?: string) => TABS.findIndex((t) => t.id === id);
+  const requested = find(tab) >= 0 ? find(tab) : find(DEFAULT_TAB);
   const { width } = useWindowDimensions();
   const pager = useRef<ScrollViewInstance>(null);
   const scrollX = useRef(new Animated.Value(requested * width)).current;
@@ -105,6 +111,7 @@ export default function Home() {
  * (userInterfaceStyle in app.json), so the icons are always white.
  */
 function StatusBarShade() {
+  const styles = useStyles();
   const { top } = useSafeAreaInsets();
   if (top === 0) return null;
   return <View pointerEvents="none" style={[styles.shade, { height: top }]} />;
@@ -121,13 +128,20 @@ function TabBar({
   width: number;
   onSelect: (i: number) => void;
 }) {
+  const styles = useStyles();
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
+  const { invites } = useInbox();
   const slot = width / TABS.length;
   const icons: Record<TabId, ReactNode> = {
     games: <Tile char="東" size={20} />,
-    rules: <Tile char="書" size={20} color={colors.lacquer} />,
-    hub: <Tile char="聚" size={20} color={colors.tileGreen} />,
+    rules: <Tile char="書" size={20} color={colors.tileRed} />,
+    hub: (
+      <View>
+        <Tile char="聚" size={20} color={colors.tileGreen} />
+        <Badge count={invites.length} style={styles.tabBadge} />
+      </View>
+    ),
     leaderboard: <Tile char="榜" size={20} color={colors.tileBlue} />,
     profile: <Text style={styles.avatar}>{profile?.avatar ?? '🀄'}</Text>,
   };
@@ -170,22 +184,23 @@ function TabBar({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.felt },
-  shade: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.felt },
+const useStyles = themedStyles((colors) => ({
+  root: { flex: 1, backgroundColor: colors.background },
+  shade: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.background },
+  tabBadge: { position: 'absolute', top: -6, right: -12 },
   pager: { flex: 1 },
   bar: {
     flexDirection: 'row',
-    backgroundColor: colors.feltDeep,
+    backgroundColor: colors.surfaceDeep,
     borderTopWidth: 1,
-    borderTopColor: colors.feltLine,
+    borderTopColor: colors.border,
     paddingTop: 8,
   },
   indicator: { position: 'absolute', top: 0, left: 0, alignItems: 'center' },
-  indicatorPill: { width: 36, height: 3, borderRadius: 2, backgroundColor: colors.ivory },
+  indicatorPill: { width: 36, height: 3, borderRadius: 2, backgroundColor: colors.highlight },
   tab: { flex: 1, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
   tabInner: { alignItems: 'center', gap: 4 },
   avatar: { fontSize: 22, lineHeight: 28 },
-  label: { color: colors.muted, fontSize: 12, fontWeight: '600' },
-  labelActive: { color: colors.ivory },
-});
+  label: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  labelActive: { color: colors.highlight },
+}));

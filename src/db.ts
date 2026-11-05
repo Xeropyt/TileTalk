@@ -2,6 +2,7 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -18,11 +19,13 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import type { GameResult } from './game/results';
 import { initialTable, nextTableState, TableState } from './game/winds';
 import { getRuleset, nextRiichiTable, riichiOptionsOf, rulesetFor } from './scoring';
 import type { ClaimedPattern, GameOptions, WinType } from './scoring/types';
 import type {
   Group,
+  GroupInvite,
   GroupMember,
   HandRecord,
   HandResult,
@@ -51,7 +54,9 @@ function makeInviteCode(): string {
 
 export async function updateProfile(
   uid: string,
-  changes: Partial<Pick<UserProfile, 'displayName' | 'avatar' | 'stats' | 'registered' | 'earnedTitles' | 'heldTitles' | 'displayedTitles'>>,
+  changes: Partial<
+    Pick<UserProfile, 'displayName' | 'avatar' | 'stats' | 'registered' | 'earnedTitles' | 'heldTitles' | 'displayedTitles' | 'profileTheme'>
+  >,
 ) {
   await updateDoc(doc(db, 'users', uid), changes);
 }
@@ -256,9 +261,126 @@ export async function deleteSession(sessionId: string) {
   for (let i = 0; i === 0 || i < hands.length; i += 499) {
     const batch = writeBatch(db);
     hands.slice(i, i + 499).forEach((h) => batch.delete(h.ref));
-    if (i + 499 >= hands.length) batch.delete(sessionRef);
+    if (i + 499 >= hands.length) {
+      // Its results go too, so the leaderboard drops the game straight away.
+      batch.delete(doc(db, 'results', sessionId));
+      batch.delete(sessionRef);
+    }
     await batch.commit();
   }
+}
+
+/** A game's hands, read once. */
+export async function fetchHands(sessionId: string): Promise<HandRecord[]> {
+  const snap = await getDocs(collection(db, 'sessions', sessionId, 'hands'));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as HandRecord);
+}
+
+// ---------- Game results (what the leaderboard adds up) ----------
+
+export async function saveGameResult(result: GameResult) {
+  await setDoc(doc(db, 'results', result.id), result);
+}
+
+/** Every finished game's results, for the leaderboard. */
+export function subscribeAllResults(onData: (r: GameResult[]) => void, onError: OnError): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'results'),
+    (snap) => onData(snap.docs.map((d) => ({ ...(d.data() as GameResult), id: d.id }))),
+    onError,
+  );
+}
+
+/** One player's game results, for their public profile. */
+export function subscribeResultsFor(uid: string, onData: (r: GameResult[]) => void, onError: OnError): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'results'), where('uids', 'array-contains', uid)),
+    (snap) => onData(snap.docs.map((d) => ({ ...(d.data() as GameResult), id: d.id }))),
+    onError,
+  );
+}
+
+// ---------- Group invitations ----------
+
+export function inviteIdFor(groupId: string, toUid: string): string {
+  return `${groupId}_${toUid}`;
+}
+
+/** Puts an invitation in the player's inbox. One per group per player. */
+export async function sendGroupInvite(group: Group, toUid: string, from: { uid: string; name: string; avatar: string }) {
+  const id = inviteIdFor(group.id, toUid);
+  try {
+    await setDoc(doc(db, 'groupInvites', id), {
+      groupId: group.id,
+      groupName: group.name,
+      fromUid: from.uid,
+      fromName: from.name,
+      fromAvatar: from.avatar,
+      toUid,
+      createdAt: serverTimestamp(),
+    });
+  } catch (e) {
+    // The rules only allow creating, so an invitation that's already waiting is refused.
+    if ((e as { code?: string }).code === 'permission-denied') throw new Error('They already have an invitation to this group.');
+    throw e;
+  }
+}
+
+/** Invitations waiting for this player, newest first. */
+export function subscribeInbox(uid: string, onData: (i: GroupInvite[]) => void, onError: OnError): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'groupInvites'), where('toUid', '==', uid)),
+    (snap) => {
+      const invites = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as GroupInvite);
+      invites.sort((a, b) => (b.createdAt?.toMillis() ?? Date.now()) - (a.createdAt?.toMillis() ?? Date.now()));
+      onData(invites);
+    },
+    onError,
+  );
+}
+
+/** Invitations this player has sent for one group that haven't been answered yet. */
+export function subscribeSentInvites(uid: string, groupId: string, onData: (i: GroupInvite[]) => void, onError: OnError): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'groupInvites'), where('fromUid', '==', uid), where('groupId', '==', groupId)),
+    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as GroupInvite)),
+    onError,
+  );
+}
+
+/** Joins the group, then clears the invitation. */
+export async function acceptGroupInvite(invite: GroupInvite, uid: string, me: GroupMember) {
+  try {
+    await updateDoc(doc(db, 'groups', invite.groupId), { memberIds: arrayUnion(uid), [`members.${uid}`]: me });
+  } catch (e) {
+    if ((e as { code?: string }).code === 'not-found') {
+      await deleteDoc(doc(db, 'groupInvites', invite.id));
+      throw new Error('That group doesn’t exist any more.');
+    }
+    throw e;
+  }
+  await deleteDoc(doc(db, 'groupInvites', invite.id));
+}
+
+/** Declining, or the sender taking it back. */
+export async function deleteGroupInvite(inviteId: string) {
+  await deleteDoc(doc(db, 'groupInvites', inviteId));
+}
+
+// ---------- Profiles, read once ----------
+
+const profileCache = new Map<string, UserProfile | null>();
+
+/** Several players' profiles, e.g. who liked a post. Kept for the rest of the session. */
+export async function fetchProfiles(uids: string[]): Promise<UserProfile[]> {
+  const missing = uids.filter((u) => !profileCache.has(u));
+  await Promise.all(
+    missing.map(async (u) => {
+      const snap = await getDoc(doc(db, 'users', u));
+      profileCache.set(u, snap.exists() ? ({ uid: snap.id, ...snap.data() } as UserProfile) : null);
+    }),
+  );
+  return uids.map((u) => profileCache.get(u)).filter((p): p is UserProfile => !!p);
 }
 
 // ---------- Immediate payouts ----------
@@ -412,6 +534,15 @@ export async function sharePost(post: Omit<HubPost, 'id' | 'likedBy' | 'commentC
   if ((await getDoc(ref)).exists()) throw new Error('You’ve already shared a hand from this game.');
   await setDoc(ref, { ...post, likedBy: [], commentCount: 0, createdAt: serverTimestamp() });
   return id;
+}
+
+/** How many Hub posts this player has liked, live. */
+export function subscribeLikedCount(uid: string, onData: (n: number) => void, onError: OnError): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'posts'), where('likedBy', 'array-contains', uid)),
+    (snap) => onData(snap.size),
+    onError,
+  );
 }
 
 export async function setLiked(postId: string, uid: string, liked: boolean) {

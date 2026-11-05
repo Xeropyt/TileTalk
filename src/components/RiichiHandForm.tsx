@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { recordHand } from '../db';
 import {
@@ -13,7 +13,7 @@ import {
   rulesetFor,
   settleRiichiHand,
 } from '../scoring';
-import { colors, radius } from '../theme';
+import { colors, radius, themedStyles } from '../theme';
 import type { Player, Session } from '../types';
 import { Button, Card, Chip, ErrorText, formatPoints, Muted, Row, Screen, SectionTitle } from '../ui';
 
@@ -23,6 +23,7 @@ const newWinner = (): Partial<RiichiWinner> => ({ han: 1, fu: 30, yakuman: 0 });
 
 /** Records a Riichi hand from han and fu. The app works out every payment from there. */
 export function RiichiHandForm({ session, uid }: { session: Session; uid: string }) {
+  const styles = useStyles();
   const ruleset = rulesetFor(session.rulesetId, session.options);
   const players = session.players;
   const playerIds = players.map((p) => p.id);
@@ -205,7 +206,7 @@ export function RiichiHandForm({ session, uid }: { session: Session; uid: string
               <Text
                 style={[
                   styles.paymentValue,
-                  { color: settled.payments[p.id] > 0 ? colors.gain : settled.payments[p.id] < 0 ? colors.loss : colors.text },
+                  { color: settled.payments[p.id] > 0 ? colors.success : settled.payments[p.id] < 0 ? colors.error : colors.text },
                 ]}
               >
                 {formatPoints(settled.payments[p.id])}
@@ -241,6 +242,7 @@ function WinnerCard({
   base?: number;
   onRemove?: () => void;
 }) {
+  const styles = useStyles();
   const needsFu = !w.yakuman && (w.han ?? 1) < MANGAN_HAN;
   const label = base ? limitName(base) ?? `${w.han} han ${w.fu} fu` : null;
   return (
@@ -286,11 +288,11 @@ function WinnerCard({
   );
 }
 
-const styles = StyleSheet.create({
-  label: { color: colors.muted, fontSize: 13, fontWeight: '600' },
-  value: { color: colors.ivory, fontSize: 18, fontWeight: '700' },
-  summary: { backgroundColor: colors.feltDeep, borderRadius: radius.card },
+const useStyles = themedStyles((colors) => ({
+  label: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  value: { color: colors.highlight, fontSize: 18, fontWeight: '700' },
+  summary: { backgroundColor: colors.surfaceDeep, borderRadius: radius.card },
   payment: { flexDirection: 'row', justifyContent: 'space-between' },
   paymentName: { color: colors.text, fontSize: 16 },
   paymentValue: { fontSize: 16, fontWeight: '700' },
-});
+}));

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { displayNameOf, Protected, useAuth, useSignedInUser } from '../../src/auth';
 import { PostCard } from '../../src/components/PostCard';
 import { addComment, deleteComment, deletePost, subscribeComments, subscribeIsAdmin, subscribePost } from '../../src/db';
-import { colors, radius } from '../../src/theme';
+import { radius, themedStyles } from '../../src/theme';
 import type { HubComment, HubPost } from '../../src/types';
 import { Button, Chip, ErrorText, Field, Loading, Muted, Screen, SectionTitle } from '../../src/ui';
 
@@ -19,6 +19,7 @@ export default function PostPage() {
 }
 
 function PostScreen() {
+  const styles = useStyles();
   const { id } = useLocalSearchParams<{ id: string }>();
   const user = useSignedInUser();
   const { profile } = useAuth();
@@ -133,12 +134,12 @@ function PostScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   comment: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: colors.feltDeep,
+    backgroundColor: colors.surfaceDeep,
     borderRadius: radius.control,
     padding: 10,
   },
@@ -147,4 +148,4 @@ const styles = StyleSheet.create({
   commentBody: { flex: 1, gap: 2 },
   commentName: { color: colors.text, fontSize: 14, fontWeight: '700' },
   commentText: { color: colors.text, fontSize: 15, lineHeight: 21 },
-});
+}));

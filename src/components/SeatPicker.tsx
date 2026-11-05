@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { Animated, LayoutRectangle, PanResponder, PanResponderInstance, StyleSheet, Text } from 'react-native';
+import { Animated, LayoutRectangle, PanResponder, PanResponderInstance, Text } from 'react-native';
 import { WIND_CHARS, WIND_NAMES } from '../game/winds';
-import { colors, radius } from '../theme';
+import { radius, themedStyles } from '../theme';
 import type { Player } from '../types';
 import { Tile } from '../ui';
 
@@ -22,6 +22,7 @@ export function SeatPicker({
   onChange: (seats: (Player | null)[]) => void;
   onDragging?: (dragging: boolean) => void;
 }) {
+  const styles = useStyles();
   const [drag, setDrag] = useState<{ from: number; over: number | null } | null>(null);
   const pan = useRef(new Animated.ValueXY()).current;
   const layouts = useRef<LayoutRectangle[]>([]);
@@ -143,7 +144,7 @@ export function SeatPicker({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   seat: {
     flexBasis: '47%',
     flexGrow: 1,
@@ -152,12 +153,12 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 10,
     borderRadius: radius.card,
-    backgroundColor: colors.feltRaised,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.feltLine,
+    borderColor: colors.border,
   },
   seatEmpty: { borderStyle: 'dashed', backgroundColor: 'transparent' },
-  seatTarget: { borderColor: colors.ivory, borderWidth: 2, borderStyle: 'solid' },
-  seatDragged: { zIndex: 10, elevation: 8, opacity: 0.9, borderColor: colors.ivory },
+  seatTarget: { borderColor: colors.highlight, borderWidth: 2, borderStyle: 'solid' },
+  seatDragged: { zIndex: 10, elevation: 8, opacity: 0.9, borderColor: colors.highlight },
   seatText: { color: colors.text, fontSize: 15, fontWeight: '600', flexShrink: 1 },
-});
+}));

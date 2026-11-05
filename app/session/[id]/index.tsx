@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Protected, useSignedInUser } from '../../../src/auth';
 import { DiceRoller } from '../../../src/components/Dice';
@@ -10,7 +10,7 @@ import { PlayerSeat } from '../../../src/components/PlayerSeat';
 import { deleteSession, endSession, subscribeHands, subscribeIsAdmin, subscribeSession } from '../../../src/db';
 import { seatWindOf, WIND_CHARS, WIND_NAMES } from '../../../src/game/winds';
 import { riichiFinalResults, riichiOptionsOf, rulesetFor, unitOf } from '../../../src/scoring';
-import { colors, radius } from '../../../src/theme';
+import { colors, radius, themedStyles } from '../../../src/theme';
 import type { HandRecord, Session } from '../../../src/types';
 import { Button, Card, ErrorText, formatPoints, Loading, Muted, Row, Screen, SectionTitle, Tile } from '../../../src/ui';
 
@@ -26,6 +26,7 @@ export default function SessionPage() {
 }
 
 function SessionScreen() {
+  const styles = useStyles();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [hands, setHands] = useState<HandRecord[]>([]);
@@ -88,7 +89,7 @@ function SessionScreen() {
         <View style={[styles.tableRow, styles.middleRow]}>
           {seatView(3)}
           <View style={styles.centre} accessible accessibilityLabel={`${WIND_NAMES[table.prevailingWind]} round, hand ${table.handNumber}`}>
-            <Tile char={WIND_CHARS[table.prevailingWind]} size={52} color={colors.lacquer} />
+            <Tile char={WIND_CHARS[table.prevailingWind]} size={52} color={colors.tileRed} />
             <Text style={styles.round}>{finished ? 'Game over' : `${WIND_NAMES[table.prevailingWind]} round`}</Text>
             {!finished ? <Muted>Hand {table.handNumber}</Muted> : null}
             <GameClock session={session} hands={hands} />
@@ -115,7 +116,7 @@ function SessionScreen() {
                 <Text style={styles.standingText}>
                   {r.rank}. {p.avatar} {p.name}, {r.points.toLocaleString()}
                 </Text>
-                <Text style={[styles.standingText, { color: r.result >= 0 ? colors.gain : colors.loss }]}>
+                <Text style={[styles.standingText, { color: r.result >= 0 ? colors.success : colors.error }]}>
                   {r.result > 0 ? '+' : ''}
                   {r.result.toFixed(1)}
                 </Text>
@@ -135,7 +136,7 @@ function SessionScreen() {
               <Text style={styles.standingText}>
                 {i + 1}. {p.avatar} {p.name}
               </Text>
-              <Text style={[styles.standingText, { color: (scores[p.id] ?? 0) >= 0 ? colors.gain : colors.loss }]}>
+              <Text style={[styles.standingText, { color: (scores[p.id] ?? 0) >= 0 ? colors.success : colors.error }]}>
                 {formatPoints(scores[p.id] ?? 0)}
               </Text>
             </View>
@@ -219,7 +220,7 @@ function SessionScreen() {
               try {
                 await deleteSession(session.id);
                 if (router.canGoBack()) router.back();
-                else router.replace('/');
+                else router.replace('/?tab=games');
               } catch (e) {
                 setError((e as Error).message);
                 setDeleting(false);
@@ -234,12 +235,12 @@ function SessionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   table: {
-    backgroundColor: colors.feltRaised,
+    backgroundColor: colors.surface,
     borderRadius: radius.card + 8,
     borderWidth: 1,
-    borderColor: colors.feltLine,
+    borderColor: colors.border,
     paddingVertical: 14,
     paddingHorizontal: 6,
     gap: 10,
@@ -253,4 +254,4 @@ const styles = StyleSheet.create({
   recordRow: { flexWrap: 'nowrap' },
   recordButton: { flex: 1 },
   standingText: { color: colors.text, fontSize: 16, fontWeight: '600' },
-});
+}));

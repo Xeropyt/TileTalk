@@ -1,10 +1,11 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { colors, radius } from '../theme';
+import { Text, View } from 'react-native';
+import { radius, themedStyles } from '../theme';
 import { averageTai, PlayerStats } from '../types';
 import { formatPoints, Muted } from '../ui';
 
 export function StatsGrid({ stats: s }: { stats: PlayerStats }) {
+  const styles = useStyles();
   const rows: [string, string][] = [
     ['Hands played', `${s.handsPlayed}`],
     ['Wins', `${s.wins}`],
@@ -27,15 +28,15 @@ export function StatsGrid({ stats: s }: { stats: PlayerStats }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   stat: {
     flexBasis: '47%',
     flexGrow: 1,
-    backgroundColor: colors.feltRaised,
+    backgroundColor: colors.surface,
     borderRadius: radius.card,
     padding: 14,
     gap: 2,
   },
   value: { color: colors.text, fontSize: 24, fontWeight: '700' },
-});
+}));

@@ -53,6 +53,8 @@ export interface UserProfile {
   heldTitles?: HeldTitle[];
   /** Title keys (see titleKey) the player chose to show publicly, best first. */
   displayedTitles?: string[];
+  /** Public profile design (see game/profileThemes.ts). Everyone who visits sees it. */
+  profileTheme?: string;
 }
 
 export interface GroupMember {
@@ -153,6 +155,19 @@ export interface HandRecord {
   payout: number;
   payments: Record<string, number>;
   createdBy: string;
+  createdAt?: { toMillis(): number } | null;
+}
+
+/** An invitation to join a group, waiting in the invited player's inbox. */
+export interface GroupInvite {
+  /** `${groupId}_${toUid}`: one invitation per group per player. */
+  id: string;
+  groupId: string;
+  groupName: string;
+  fromUid: string;
+  fromName: string;
+  fromAvatar: string;
+  toUid: string;
   createdAt?: { toMillis(): number } | null;
 }
 

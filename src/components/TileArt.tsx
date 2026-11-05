@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { tileName } from '../game/tiles';
-import { colors } from '../theme';
+import { themedStyles } from '../theme';
 
 // Tile artwork lives in assets/tiles. Every tile is drawn as front.svg with the tile's own
 // transparent SVG laid over it. Swap in new art by replacing the files, keeping the names.
@@ -81,7 +81,19 @@ export const TileImage = React.memo(function TileImage({ code, width, dim }: { c
  * A whole hand, sized to fit the space it's given on one row, with flowers and seasons in a
  * smaller row underneath.
  */
-export function HandView({ tiles, flowers = [], maxTileWidth = 40 }: { tiles: string[]; flowers?: string[]; maxTileWidth?: number }) {
+export function HandView({
+  tiles,
+  flowers = [],
+  maxTileWidth = 40,
+  flowerScale = FLOWER_SCALE,
+}: {
+  tiles: string[];
+  flowers?: string[];
+  maxTileWidth?: number;
+  /** Flower size relative to the hand's tiles. */
+  flowerScale?: number;
+}) {
+  const styles = useStyles();
   const [width, setWidth] = useState(0);
   const gap = 2;
   const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
@@ -89,7 +101,7 @@ export function HandView({ tiles, flowers = [], maxTileWidth = 40 }: { tiles: st
     count === 0 || width === 0 ? 0 : Math.min(max, Math.floor((width - gap * (count - 1)) / count));
   const tileWidth = fit(Math.max(tiles.length, 14), maxTileWidth);
   // Flowers are set aside from the hand, so they're drawn smaller than its tiles.
-  const flowerWidth = Math.round(tileWidth * FLOWER_SCALE);
+  const flowerWidth = Math.round(tileWidth * flowerScale);
 
   return (
     <View onLayout={onLayout} style={styles.hand}>
@@ -114,9 +126,9 @@ export function HandView({ tiles, flowers = [], maxTileWidth = 40 }: { tiles: st
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   hand: { gap: 8, minHeight: 20 },
   row: { flexDirection: 'row', alignItems: 'flex-end' },
   flowers: { alignItems: 'center' },
-  flowerLabel: { color: colors.muted, fontSize: 12, fontWeight: '600', marginRight: 6 },
-});
+  flowerLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '600', marginRight: 6 },
+}));

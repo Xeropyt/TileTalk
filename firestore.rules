@@ -123,6 +123,29 @@ service cloud.firestore {
       }
     }
 
+    // What each finished game adds to its players' career stats, for the leaderboard. Anyone can
+    // read them; only players in the game can write them, and only once it's finished.
+    match /results/{sessionId} {
+      allow read: if signedIn();
+      allow create, update: if isSessionMember(sessionId)
+        && get(/databases/$(database)/documents/sessions/$(sessionId)).data.status == 'finished'
+        && request.resource.data.id == sessionId;
+      allow delete: if isAdmin();
+    }
+
+    // Invitations to join a group. Group members can send them; only the sender and the invited
+    // player can see one. It's deleted when it's answered, so there's nothing to update.
+    match /groupInvites/{inviteId} {
+      allow read: if signedIn()
+        && (resource.data.toUid == request.auth.uid || resource.data.fromUid == request.auth.uid);
+      allow create: if isGroupMember(request.resource.data.groupId)
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid != request.auth.uid
+        && inviteId == request.resource.data.groupId + '_' + request.resource.data.toUid;
+      allow delete: if signedIn()
+        && (resource.data.toUid == request.auth.uid || resource.data.fromUid == request.auth.uid);
+    }
+
     match /sessions/{sessionId} {
       allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
       allow create: if isGroupMember(request.resource.data.groupId)

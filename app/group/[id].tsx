@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { Protected, useSignedInUser } from '../../src/auth';
 import { deleteGroup, subscribeGroup, subscribeGroupSessions, subscribeIsAdmin } from '../../src/db';
+import { InviteSheet } from '../../src/components/InviteSheet';
 import { SessionRow } from '../../src/components/SessionRow';
 import { WIND_NAMES } from '../../src/game/winds';
-import { colors, radius } from '../../src/theme';
+import { radius, themedStyles } from '../../src/theme';
 import type { Group, Session } from '../../src/types';
 import { Button, Card, ErrorText, Loading, Muted, Row, Screen, SectionTitle, Tile, Title } from '../../src/ui';
 
@@ -18,6 +19,7 @@ export default function GroupPage() {
 }
 
 function GroupScreen() {
+  const styles = useStyles();
   const { id } = useLocalSearchParams<{ id: string }>();
   const user = useSignedInUser();
   const [group, setGroup] = useState<Group | null | undefined>(undefined);
@@ -27,6 +29,7 @@ function GroupScreen() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [inviting, setInviting] = useState(false);
 
   useEffect(() => subscribeGroup(id, setGroup, (e) => { setError(e.message); setGroup(null); }), [id]);
   useEffect(() => subscribeGroupSessions(id, user.uid, setSessions, (e) => setError(e.message)), [id, user.uid]);
@@ -41,16 +44,6 @@ function GroupScreen() {
       </Screen>
     );
   }
-
-  const share = async () => {
-    try {
-      await Share.share({
-        message: `Join "${group.name}" on TileTalk with invite code ${group.inviteCode}`,
-      });
-    } catch {
-      // Sharing isn't available everywhere (e.g. some desktop browsers); the code is on screen anyway.
-    }
-  };
 
   const active = sessions.filter((s) => s.status === 'active');
   const startNew = () => {
@@ -97,15 +90,19 @@ function GroupScreen() {
       ) : null}
 
       <Card>
-        <SectionTitle>Invite code</SectionTitle>
+        <SectionTitle>Invite players</SectionTitle>
         <Row style={{ gap: 6 }}>
           {group.inviteCode.split('').map((ch, i) => (
             <Tile key={i} char={ch} size={36} />
           ))}
         </Row>
-        <Muted>Friends enter this code on their Games page to join. They don’t need an account.</Muted>
-        <Button title="Share invite" variant="secondary" onPress={share} />
+        <Muted>
+          Friends can enter this code on their Games page to join, no account needed. Or send an invitation straight to
+          someone’s inbox.
+        </Muted>
+        <Button title="Invite players" onPress={() => setInviting(true)} />
       </Card>
+      <InviteSheet group={group} visible={inviting} onClose={() => setInviting(false)} />
 
       <SectionTitle>Members</SectionTitle>
       <View style={styles.members}>
@@ -149,7 +146,7 @@ function GroupScreen() {
               try {
                 await deleteGroup(group);
                 if (router.canGoBack()) router.back();
-                else router.replace('/');
+                else router.replace('/?tab=games');
               } catch (e) {
                 setError((e as Error).message);
                 setDeleting(false);
@@ -167,14 +164,14 @@ function GroupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   members: { gap: 8 },
   member: {
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: radius.control,
-    backgroundColor: colors.feltDeep,
+    backgroundColor: colors.surfaceDeep,
   },
   memberText: { color: colors.text, fontSize: 15 },
   running: { gap: 8 },
-});
+}));

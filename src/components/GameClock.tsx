@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { Text } from 'react-native';
 import { formatClock, formatDuration } from '../game/history';
-import { colors } from '../theme';
+import { themedStyles } from '../theme';
 import type { HandRecord, Session } from '../types';
 
 /**
@@ -29,6 +29,7 @@ export function useNow(running: boolean): number {
 
 /** A ticking clock while the game runs, and the total once it's over. */
 export function GameClock({ session, hands }: { session: Session; hands: HandRecord[] }) {
+  const styles = useStyles();
   const active = session.status === 'active';
   const now = useNow(active);
   const ms = playingTime(session, hands, now);
@@ -40,6 +41,6 @@ export function GameClock({ session, hands }: { session: Session; hands: HandRec
   );
 }
 
-const styles = StyleSheet.create({
-  clock: { color: colors.muted, fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
-});
+const useStyles = themedStyles((colors) => ({
+  clock: { color: colors.textMuted, fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
+}));

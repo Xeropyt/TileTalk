@@ -1,14 +1,15 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import { Link } from 'expo-router';
 import { formatClock, formatDuration } from '../game/history';
 import { WIND_NAMES } from '../game/winds';
-import { colors, radius } from '../theme';
+import { radius, themedStyles } from '../theme';
 import type { Session } from '../types';
 import { formatPoints, Muted } from '../ui';
 import { playingTime, useNow } from './GameClock';
 
 export function SessionRow({ session, groupName }: { session: Session; groupName?: string }) {
+  const styles = useStyles();
   const leader = [...session.players].sort((a, b) => (session.scores[b.id] ?? 0) - (session.scores[a.id] ?? 0))[0];
   const date = session.createdAt ? new Date(session.createdAt.toMillis()).toLocaleDateString() : 'Today';
   const detail =
@@ -33,14 +34,14 @@ export function SessionRow({ session, groupName }: { session: Session; groupName
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = themedStyles((colors) => ({
   session: {
-    backgroundColor: colors.feltRaised,
+    backgroundColor: colors.surface,
     borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: colors.feltLine,
+    borderColor: colors.border,
     padding: 16,
     gap: 4,
   },
   sessionTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
-});
+}));

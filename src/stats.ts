@@ -1,12 +1,30 @@
-import { useEffect, useMemo, useState } from 'react';
-import { subscribeHands, subscribeMyGroups, subscribeMySessions, updateProfile } from './db';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAuth } from './auth';
+import {
+  fetchHands,
+  saveGameResult,
+  subscribeAllResults,
+  subscribeHands,
+  subscribeIsAdmin,
+  subscribeLikedCount,
+  subscribeMyGroups,
+  subscribeMySessions,
+  subscribeResultsFor,
+  updateProfile,
+} from './db';
+import type { UnlockCounts } from './game/profileThemes';
+import { bestStats, GameResult, gameResult, RESULTS_VERSION, sumResults } from './game/results';
 import { computeStats } from './game/stats';
-import { earnedTitles, findTitle, HeldTitle, titleKey } from './game/titles';
+import { earnedTitles, findTitle, HeldTitle, PlayerCounts, playerCounts, Progress, titleKey, titleProgress } from './game/titles';
 import type { Group, HandRecord, PlayerStats, Session, UserProfile } from './types';
 
 export interface PlayerRecord {
   stats: PlayerStats;
   titles: { permanent: string[]; held: HeldTitle[] };
+  /** How close each title is. */
+  progress: Record<string, Progress>;
+  /** Games played and won, and limit hands won, for unlocking profile designs. */
+  counts: PlayerCounts;
 }
 
 /**
@@ -44,7 +62,12 @@ export function usePlayerRecord(uid: string): { record: PlayerRecord | null; err
   const record = useMemo(
     () =>
       loaded
-        ? { stats: computeStats(uid, sessions, hands), titles: earnedTitles(uid, sessions, hands, groups) }
+        ? {
+            stats: computeStats(uid, sessions, hands),
+            titles: earnedTitles(uid, sessions, hands, groups),
+            progress: titleProgress(uid, sessions, hands, groups),
+            counts: playerCounts(uid, sessions, hands),
+          }
         : null,
     [loaded, uid, sessions, hands, groups],
   );
@@ -88,4 +111,72 @@ export function usePublishRecord(profile: UserProfile | null, record: PlayerReco
       console.warn('Could not publish stats and titles:', (e as Error).message),
     );
   }, [profile, record, registered]);
+}
+
+/**
+ * Saves each finished game's results the moment it ends, so the leaderboard updates for everyone
+ * at the table, not only for players who open their profile. Runs on every phone in the game;
+ * whichever gets there first writes it, and the rest find it saved. Also fills in games that
+ * finished before results were saved.
+ */
+export function GameResultsKeeper() {
+  const { user } = useAuth();
+  const uid = user?.uid;
+  const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [saved, setSaved] = useState<Record<string, number> | null>(null);
+  const tried = useRef(new Set<string>());
+
+  useEffect(() => (uid ? subscribeMySessions(uid, setSessions, () => setSessions(null)) : undefined), [uid]);
+  useEffect(
+    () =>
+      uid
+        ? subscribeResultsFor(uid, (r) => setSaved(Object.fromEntries(r.map((x) => [x.id, x.version ?? 0]))), () => setSaved(null))
+        : undefined,
+    [uid],
+  );
+
+  useEffect(() => {
+    if (!uid || !sessions || !saved) return;
+    for (const s of sessions) {
+      const seated = s.players.some((p) => p.uid === uid);
+      if (s.status !== 'finished' || !seated || (saved[s.id] ?? -1) >= RESULTS_VERSION) continue;
+      // Once per game per app run, so a refused write (e.g. rules not published yet) isn't retried in a loop.
+      const key = `${s.id}:${RESULTS_VERSION}`;
+      if (tried.current.has(key)) continue;
+      tried.current.add(key);
+      fetchHands(s.id)
+        .then((hands) => saveGameResult(gameResult(s, hands)))
+        .catch((e) => console.warn(`Could not save results for game ${s.id}:`, (e as Error).message));
+    }
+  }, [uid, sessions, saved]);
+
+  return null;
+}
+
+/** Every account's stats added up from finished games, live. Null until loaded. */
+export function useResultTotals(uid?: string): { totals: Record<string, PlayerStats> | null; error: string | null } {
+  const [results, setResults] = useState<GameResult[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(
+    () => (uid ? subscribeResultsFor(uid, setResults, (e) => setError(e.message)) : subscribeAllResults(setResults, (e) => setError(e.message))),
+    [uid],
+  );
+  const totals = useMemo(() => (results ? sumResults(results) : null), [results]);
+  return { totals, error };
+}
+
+/** A profile with its stats taken from finished games where they're more complete. */
+export function withResultStats(profile: UserProfile, totals: Record<string, PlayerStats> | null): UserProfile {
+  return { ...profile, stats: bestStats(profile.stats, totals?.[profile.uid]) };
+}
+
+/** Everything profile designs unlock with, plus whether this player is an admin (who has them all). */
+export function useUnlocks(uid: string): { counts: UnlockCounts | null; isAdmin: boolean; record: PlayerRecord | null } {
+  const { record } = usePlayerRecord(uid);
+  const [likesGiven, setLikesGiven] = useState<number | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => subscribeLikedCount(uid, setLikesGiven, () => setLikesGiven(0)), [uid]);
+  useEffect(() => subscribeIsAdmin(uid, setIsAdmin), [uid]);
+  const counts = record && likesGiven !== null ? { ...record.counts, likesGiven } : null;
+  return { counts, isAdmin, record };
 }

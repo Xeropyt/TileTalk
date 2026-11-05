@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { displayNameOf, friendlyAuthError, isCancelledSignIn, useAuth } from '../src/auth';
-import { colors } from '../src/theme';
+import { colors, themedStyles } from '../src/theme';
 import { Button, ErrorText, Field, Muted, Row, Screen, Tile, Title } from '../src/ui';
 
 /** Optional: guests use the app without this. Creating an account keeps everything they've played. */
 export default function Login() {
+  const styles = useStyles();
   const params = useLocalSearchParams<{ mode?: string }>();
   const { user, profile, isGuest, signIn, signUp, signInWithGoogle } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup'>(params.mode === 'signup' ? 'signup' : 'login');
@@ -63,7 +64,7 @@ export default function Login() {
         <View style={styles.hero}>
           <Row style={styles.tiles}>
             <Tile char="東" size={40} />
-            <Tile char="中" size={40} color={colors.lacquer} />
+            <Tile char="中" size={40} color={colors.tileRed} />
             <Tile char="發" size={40} color={colors.tileGreen} />
           </Row>
           <Title>{mode === 'signup' ? 'Create an account' : 'Log in'}</Title>
@@ -127,11 +128,11 @@ export default function Login() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.felt },
+const useStyles = themedStyles((colors) => ({
+  flex: { flex: 1, backgroundColor: colors.background },
   hero: { gap: 10, paddingTop: 12, paddingBottom: 12 },
   tiles: { gap: 8, marginBottom: 8 },
   or: { alignItems: 'center', gap: 10 },
-  orLine: { flex: 1, height: 1, backgroundColor: colors.feltLine },
-  orText: { color: colors.muted, fontSize: 13 },
-});
+  orLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  orText: { color: colors.textMuted, fontSize: 13 },
+}));

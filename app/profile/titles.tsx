@@ -3,7 +3,9 @@ import { StyleSheet, View } from 'react-native';
 import { Protected, useAuth, useSignedInUser } from '../../src/auth';
 import { TitleCard } from '../../src/components/TitleCard';
 import { updateProfile } from '../../src/db';
+import { sortByProgress } from '../../src/game/profileThemes';
 import { CATEGORY_NAMES, MAX_SHOWN_TITLES, ownedTitles, shownTitles, TitleCategory, TITLES } from '../../src/game/titles';
+import { usePlayerRecord } from '../../src/stats';
 import { ErrorText, Loading, Muted, Screen, SectionTitle } from '../../src/ui';
 
 const CATEGORY_ORDER: TitleCategory[] = ['glory', 'shame', 'milestone'];
@@ -20,6 +22,7 @@ function TitlesScreen() {
   const user = useSignedInUser();
   const { profile } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const { record } = usePlayerRecord(user.uid);
 
   if (!profile) return <Loading />;
 
@@ -46,7 +49,7 @@ function TitlesScreen() {
     <Screen>
       <Muted>
         Tap a title you’ve earned to show it on your public profile and the leaderboard. You can show up to{' '}
-        {MAX_SHOWN_TITLES}. Titles update when you open TileTalk.
+        {MAX_SHOWN_TITLES}. Titles still to unlock show how close you are, closest first.
       </Muted>
       <ErrorText message={error} />
 
@@ -70,13 +73,17 @@ function TitlesScreen() {
       )}
 
       {CATEGORY_ORDER.map((category) => {
-        const titles = locked.filter((t) => t.category === category);
+        // Closest to unlocking first, within each category.
+        const titles = sortByProgress(
+          locked.filter((t) => t.category === category),
+          (t) => record?.progress[t.id]?.fraction ?? 0,
+        );
         if (titles.length === 0) return null;
         return (
           <View key={category} style={styles.list}>
             <SectionTitle>Still to unlock: {CATEGORY_NAMES[category]}</SectionTitle>
             {titles.map((t) => (
-              <TitleCard key={t.id} def={t} locked />
+              <TitleCard key={t.id} def={t} locked progress={record?.progress[t.id]} />
             ))}
           </View>
         );
